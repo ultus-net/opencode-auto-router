@@ -69,9 +69,18 @@ It keeps the `~…-latest` workflow and makes the Auto Router accept it:
 3. The per-request list overrides the saved account-level allowlist
    (as long as **Prevent overrides** is off — the default), so this works even
    when your account's Auto Router settings are broken.
+4. It also makes `openrouter/auto` your OpenCode default model when you have not
+   configured one, so a fresh install "just works" without editing config.
 
 You keep writing `~…-latest`. The plugin keeps translating it into what the
 router actually understands.
+
+> [!IMPORTANT]
+> **OpenRouter's "Prevent overrides" toggle must be OFF** at
+> <https://openrouter.ai/settings/routing>. When it is ON, OpenRouter makes your
+> saved account Auto Router values final and **ignores request-level settings**,
+> so this plugin (or any client) cannot apply its resolved pool. See
+> [Troubleshooting](#404-no-models-match-your-request-and-model-restrictions-after-enabling-prevent-overrides).
 
 ## Install
 
@@ -109,8 +118,8 @@ Restart OpenCode. Done.
 }
 ```
 
-Then make sure `openrouter/auto` is your model — either select it in the TUI or
-set it as the default:
+Then make sure `openrouter/auto` is your model — either select it in the TUI, let
+the plugin set it as your default (see below), or set it explicitly:
 
 ```jsonc
 {
@@ -120,6 +129,23 @@ set it as the default:
 
 > Note the doubled `openrouter/`: OpenCode model IDs are
 > `provider_id/model_id`, and the OpenRouter model is named `openrouter/auto`.
+
+## Make the Auto Router your default model
+
+The plugin already does this. When you have **not** configured a `model`
+anywhere, it sets OpenCode's default to `openrouter/openrouter/auto` in memory at
+startup — no config file edits. This means you install the plugin, restart
+OpenCode, and the Auto Router is simply your default.
+
+Rules:
+
+- An explicit `model` in any `opencode.json` / `opencode.jsonc` wins.
+- `--model` on the command line always wins.
+- To turn it off: set plugin option `setDefaultModel: false`.
+- To override even an explicit configured model: set `forceDefaultModel: true`.
+
+The plugin does **not** rewrite your config file; it mutates the loaded config
+for the session, so nothing is left behind on disk.
 
 ## Configure
 
@@ -144,7 +170,12 @@ Defaults work out of the box. To customize, pass plugin options:
         ],
         // Cost band: "low" | "medium" | "high" | "xhigh" | "max".
         // Omit to use your account's saved Auto Router cost preference.
-        "costTier": "high"
+        "costTier": "high",
+
+        // Default true: make openrouter/auto the default model when none is set.
+        "setDefaultModel": true,
+        // Default false: also override an explicitly configured model.
+        "forceDefaultModel": false
       }
     ]
   ]

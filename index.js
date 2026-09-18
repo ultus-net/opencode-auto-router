@@ -33,6 +33,15 @@
  * ("Prevent overrides" must be OFF, which is the default), so this works even
  * when the saved account allowlist is unhealthy.
  *
+ * IMPORTANT: OpenRouter's "Prevent overrides" toggle makes the saved account
+ * Auto Router values final and causes request-level settings (including this
+ * plugin's) to be ignored. If it is ON and your saved allowlist is broken,
+ * every request 404s and no client-side plugin can fix it.
+ * @see https://openrouter.ai/settings/routing
+ *
+ * It can also make `openrouter/auto` the OpenCode default model when none is
+ * configured (see `setDefaultModel` / `forceDefaultModel` below).
+ *
  * @see https://openrouter.ai/docs/guides/routing/routers/auto-router
  */
 
@@ -72,10 +81,22 @@ const DISK_CACHE = `${
   process.env.XDG_CACHE_HOME ?? `${process.env.HOME}/.cache`
 }/opencode/openrouter-auto-latest.json`
 
+const DEFAULT_MODEL = "openrouter/openrouter/auto"
+
 /**
  * @typedef {Object} PluginConfig
- * @property {string[]} [aliases]  Override the `~...-latest` pool.
- * @property {string} [costTier]   Cost band for the Auto Router.
+ * @property {string[]} [aliases]          Override the `~...-latest` pool.
+ * @property {string} [costTier]           Cost band for the Auto Router.
+ * @property {boolean} [setDefaultModel]   Default `true`. Set OpenCode's default
+ *   model to `openrouter/openrouter/auto` when no model is configured.
+ * @property {boolean} [forceDefaultModel] Default `false`. Set the default model
+ *   even when one is already configured (still overridable with `--model`).
+ *
+ * NOTE: For this plugin to apply its resolved pool, OpenRouter's "Prevent
+ * overrides" toggle must be OFF. When it is ON, OpenRouter makes the saved
+ * account Auto Router values final and ignores request-level settings, so no
+ * client-side plugin can constrain the pool.
+ * @see https://openrouter.ai/settings/routing
  */
 
 /** @type {PluginConfig} */
@@ -149,6 +170,15 @@ export default {
     await resolveSlugs()
 
     return {
+      // Optionally make the Auto Router the default model. Only writes when a
+      // model is unset, unless forceDefaultModel is enabled. `--model` and an
+      // explicit `model` in a *project* config still win at call time.
+      config: async (cfg) => {
+        if (config.setDefaultModel === false) return
+        if (cfg.model && config.forceDefaultModel !== true) return
+        cfg.model = DEFAULT_MODEL
+      },
+
       "chat.params": async (input, output) => {
         if (input.model?.providerID !== PROVIDER_ID) return
         if (input.model?.id !== MODEL_ID) return
