@@ -218,13 +218,44 @@ with the 404 above while this plugin's request succeeds. You can also confirm
 what was sent by checking that the model used is a current flagship — the
 Auto Router reports it in the response's `model` field.
 
+## Troubleshooting
+
+### `404 No models match your request and model restrictions` after enabling "Prevent overrides"
+
+OpenRouter's **Prevent overrides** toggle
+(<https://openrouter.ai/settings/routing>) makes your **saved** Auto Router
+values final and causes per-request settings — including this plugin's — to be
+ignored. If the saved allowlist is unhealthy (for example it contains
+`~…-latest` aliases, which the router cannot resolve), then every request 404s
+and **no client-side plugin can fix it**. This is by OpenRouter's design, not a
+bug in this plugin.
+
+Verified with Prevent overrides on:
+
+| Request | Result |
+| --- | --- |
+| bare `auto` (saved allowlist) | ❌ 404 |
+| `allowed_models: ["*/*"]` override | ❌ 404 |
+| `allowed_models: ["anthropic/*"]` override | ❌ 404 |
+| OpenCode + this plugin | ❌ 404 |
+
+Pick one:
+
+- **Turn Prevent overrides off.** Then this plugin's per-request allowlist
+  applies again — this is the intended setup.
+- **Or fix the saved allowlist itself** and keep Prevent overrides on. Remove
+  any `~…-latest` aliases; use wildcards (`anthropic/*`) or concrete slugs
+  (`anthropic/claude-sonnet-4.5`). With a healthy saved list, `openrouter/auto`
+  works without any client-side override — and you don't need this plugin.
+
 ## FAQ & caveats
 
 **Does this replace my account's Auto Router settings?**
 Only the `allowed_models` field, per request. Your saved `excluded_models` and
 cost preference still apply. If you turn on **Prevent overrides**
-(<https://openrouter.ai/settings/routing>), the saved settings win and this
-plugin can't help — leave it off.
+(<https://openrouter.ai/settings/routing>), the saved settings become final,
+per-request settings are ignored, and this plugin cannot apply its resolved
+list. Leave **Prevent overrides** off to use this plugin.
 
 **I'd rather use the account allowlist directly.**
 You can. Just don't put `~…-latest` aliases there; use wildcards (`anthropic/*`)
