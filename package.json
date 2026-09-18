@@ -1,0 +1,48 @@
+{
+  "name": "opencode-openrouter-auto-latest",
+  "version": "1.0.0",
+  "description": "OpenCode plugin: use OpenRouter `~…-latest` aliases with the Auto Router (openrouter/auto) without pinning model versions.",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "files": [
+    "index.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "openrouter",
+    "auto-router",
+    "llm",
+    "ai",
+    "coding-agent"
+  ],
+  "license": "MIT",
+  "author": "Hunter",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ultus-net/opencode-openrouter-auto-latest.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ultus-net/opencode-openrouter-auto-latest/issues"
+  },
+  "homepage": "https://github.com/ultus-net/opencode-openrouter-auto-latest#readme",
+  "peerDependencies": {
+    "@opencode-ai/plugin": ">=1.18.0"
+  },
+  "peerDependenciesMeta": {
+    "@opencode-ai/plugin": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
