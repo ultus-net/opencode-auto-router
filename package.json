@@ -32,7 +32,7 @@
   },
   "homepage": "https://github.com/ultus-net/opencode-openrouter-auto-latest#readme",
   "peerDependencies": {
-    "@opencode-ai/plugin": ">=1.18.0",
+    "@opencode-ai/plugin": ">=1.18.29",
     "@opencode/plugin": ">=2.0.0"
   },
   "peerDependenciesMeta": {

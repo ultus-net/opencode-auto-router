@@ -30,10 +30,11 @@
  *
  * OpenCode API support: the default export carries BOTH entrypoints. V1 hosts
  * (OpenCode 1.18.x) call `server()` and use the `chat.params`/`config` hooks;
- * V2 hosts (OpenCode 2.x) call `setup(ctx)` and use `ctx.session.hook("context",
- * ...)` plus `ctx.model.transform` (options arrive via `ctx.options` instead of
- * a second argument). Per the official migration guide, a package may expose
- * both from one export; the APIs remain separate and are not translated.
+ * V2 hosts (OpenCode 2.x) call `setup(ctx)` and use the model-request session
+ * hooks (`context`/`compaction`/`generate`/`title`) plus `ctx.model.transform`
+ * (options arrive via `ctx.options` instead of a second argument). Per the
+ * official migration guide, a package may expose both from one export; the
+ * APIs remain separate and are not translated.
  * @see https://opencode.ai/v2/docs/build/plugins/migrate-v1
  *
  * The per-request list overrides the account-level Auto Router allowlist
@@ -231,30 +232,34 @@ export default {
       })
     }
 
-    // V2 equivalent of the V1 `chat.params` hook: runs right before model
-    // dispatch. Scoped to the openrouter provider; the event's `model` is
-    // double-checked inside because `providerID` filters requests, not
-    // individual model IDs.
-    await ctx.session.hook(
-      "context",
-      async (event) => {
-        if (event.model?.providerID !== PROVIDER_ID) return
-        if (event.model?.id !== MODEL_ID) return
+    // V2 equivalent of the V1 `chat.params` hook. V2 splits one hook into
+    // four per request kind, and the guide warns `context` is not an exact
+    // rename: `context` covers the agent loop only, so compaction, title,
+    // and generate requests must be registered separately or they would
+    // skip the injection (and 404 against a broken account allowlist, the
+    // exact failure mode this plugin fixes). Scoped to the openrouter
+    // provider; the event's `model` is double-checked inside because
+    // `providerID` filters requests, not individual model IDs.
+    const injectAutoRouter = async (event) => {
+      if (event.model?.providerID !== PROVIDER_ID) return
+      if (event.model?.id !== MODEL_ID) return
 
-        const models = await resolveSlugs()
-        if (!models.length) return
+      const models = await resolveSlugs()
+      if (!models.length) return
 
-        const costTier = config.costTier ?? DEFAULT_COST_TIER
-        const options_ = event.options
-        const existing = Array.isArray(options_.plugins) ? options_.plugins : []
-        const autoRouter = {
-          id: "auto-router",
-          allowed_models: models,
-          ...(costTier ? { cost_tier: costTier } : {}),
-        }
-        options_.plugins = [...existing.filter((plugin) => plugin?.id !== "auto-router"), autoRouter]
-      },
-      { providerID: PROVIDER_ID },
-    )
+      const costTier = config.costTier ?? DEFAULT_COST_TIER
+      const options_ = event.options
+      const existing = Array.isArray(options_.plugins) ? options_.plugins : []
+      const autoRouter = {
+        id: "auto-router",
+        allowed_models: models,
+        ...(costTier ? { cost_tier: costTier } : {}),
+      }
+      options_.plugins = [...existing.filter((plugin) => plugin?.id !== "auto-router"), autoRouter]
+    }
+
+    for (const name of ["context", "compaction", "generate", "title"]) {
+      await ctx.session.hook(name, injectAutoRouter, { providerID: PROVIDER_ID })
+    }
   },
 }

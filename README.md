@@ -65,7 +65,8 @@ It keeps the `~…-latest` workflow and makes the Auto Router accept it:
    catalog and maps each `~…-latest` alias to the **concrete slug** it currently
    points at (`alias_target.slug`).
 2. On every request to `openrouter/auto` it injects that resolved, concrete list
-   as the Auto Router's `allowed_models` via OpenCode's `chat.params` hook.
+   as the Auto Router's `allowed_models` (V1: `chat.params` hook; V2: the
+   session's model-request hooks).
 3. The per-request list overrides the saved account-level allowlist
    (as long as **Prevent overrides** is off — the default), so this works even
    when your account's Auto Router settings are broken.
@@ -84,8 +85,9 @@ router actually understands.
 
 ## Install
 
-Requires **OpenCode ≥ 1.18** and Node 18+. The same file supports both
-plugin APIs: OpenCode **1.18.x** uses the V1 `server()` entrypoint, and
+Requires **OpenCode ≥ 1.18.29** and Node 18+ (1.18.29 is the support floor
+for V1 object entrypoints per the migration guide). The same file supports
+both plugin APIs: OpenCode **1.18.x** uses the V1 `server()` entrypoint, and
 OpenCode **2.x** uses the V2 `setup(ctx)` entrypoint (see
 [the V1→V2 migration guide](https://opencode.ai/v2/docs/build/plugins/migrate-v1)).
 
@@ -319,8 +321,6 @@ hours (with a disk fallback).
 The plugin only calls OpenRouter's public `/models` endpoint (no API key) and
 mutates the request OpenCode was already sending to OpenRouter. It sends
 nothing anywhere else.
-
-## Uninstall
 
 ## Uninstall
 
