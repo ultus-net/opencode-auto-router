@@ -84,14 +84,24 @@ router actually understands.
 
 ## Install
 
-Requires **OpenCode ≥ 1.18** and Node 18+.
+Requires **OpenCode ≥ 1.18** and Node 18+. The same file supports both
+plugin APIs: OpenCode **1.18.x** uses the V1 `server()` entrypoint, and
+OpenCode **2.x** uses the V2 `setup(ctx)` entrypoint (see
+[the V1→V2 migration guide](https://opencode.ai/v2/docs/build/plugins/migrate-v1)).
 
 ### Option A — drop-in file (simplest)
 
 Copy `index.js` into your OpenCode plugin directory. It is auto-discovered; no
-config change needed.
+config change needed. The directory name differs by version — V2 uses the
+**plural** `plugins/`:
 
 ```bash
+# OpenCode 2.x (V2 discovery directory):
+mkdir -p ~/.config/opencode/plugins
+curl -fsSL https://raw.githubusercontent.com/ultus-net/opencode-openrouter-auto-latest/main/index.js \
+  -o ~/.config/opencode/plugins/openrouter-auto-latest.js
+
+# OpenCode 1.18.x (V1 discovery directory):
 mkdir -p ~/.config/opencode/plugin
 curl -fsSL https://raw.githubusercontent.com/ultus-net/opencode-openrouter-auto-latest/main/index.js \
   -o ~/.config/opencode/plugin/openrouter-auto-latest.js
@@ -102,19 +112,21 @@ Restart OpenCode. Done.
 ### Option B — reference it in config
 
 ```jsonc
-// ~/.config/opencode/opencode.jsonc
+// ~/.config/opencode/opencode.jsonc — OpenCode 2.x uses the plural "plugins"
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-openrouter-auto-latest"]
+  "plugins": ["opencode-openrouter-auto-latest"]
 }
 ```
+
+OpenCode 1.18.x uses the singular `"plugin"` key with the same value.
 
 ### Option C — from GitHub (no npm publish required)
 
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["github:ultus-net/opencode-openrouter-auto-latest"]
+  "plugins": ["github:ultus-net/opencode-openrouter-auto-latest"]
 }
 ```
 
@@ -155,10 +167,12 @@ Defaults work out of the box. To customize, pass plugin options:
 {
   "$schema": "https://opencode.ai/config.json",
   "model": "openrouter/openrouter/auto",
-  "plugin": [
-    [
-      "github:ultus-net/opencode-openrouter-auto-latest",
-      {
+  // OpenCode 2.x: object form with a "package" + "options" pair.
+  // OpenCode 1.18.x: tuple form ["github:...", { ...same options... }].
+  "plugins": [
+    {
+      "package": "github:ultus-net/opencode-openrouter-auto-latest",
+      "options": {
         // Any aliases you like; ones without a current target are skipped.
         "aliases": [
           "~anthropic/claude-opus-latest",
@@ -177,14 +191,15 @@ Defaults work out of the box. To customize, pass plugin options:
         // Default false: also override an explicitly configured model.
         "forceDefaultModel": false
       }
-    ]
+    }
   ]
 }
 ```
 
 If you installed with **Option A**, edit the `DEFAULT_ALIASES` and
-`DEFAULT_COST_TIER` constants at the top of
-`~/.config/opencode/plugin/openrouter-auto-latest.js` instead.
+`DEFAULT_COST_TIER` constants at the top of the drop-in file
+(`~/.config/opencode/plugins/openrouter-auto-latest.js` on OpenCode 2.x,
+`~/.config/opencode/plugin/openrouter-auto-latest.js` on 1.18.x) instead.
 
 ### Default pool
 
@@ -198,7 +213,7 @@ silently skipped, so the list is safe to keep as-is as models come and go.
 OpenCode request
       │
       ▼
-chat.params hook  ──►  resolve ~aliases from OpenRouter catalog (cached 6h)
+chat.params / context hook  ──►  resolve ~aliases (cached 6h)
       │                        │
       │                        ▼
       │               [ "anthropic/claude-opus-5",
@@ -307,9 +322,14 @@ nothing anywhere else.
 
 ## Uninstall
 
+## Uninstall
+
 ```bash
+# OpenCode 2.x:
+rm ~/.config/opencode/plugins/openrouter-auto-latest.js
+# OpenCode 1.18.x:
 rm ~/.config/opencode/plugin/openrouter-auto-latest.js
-# or remove the entry from "plugin" in your opencode config
+# or remove the entry from "plugins" (2.x) / "plugin" (1.18.x) in your opencode config
 ```
 
 ## License

@@ -26,8 +26,15 @@
  * Keeps the "never pin versions by hand" workflow. At startup (and at most
  * every CACHE_TTL_MS) it reads each alias's current target from OpenRouter's
  * public model catalog (`alias_target.slug`) and injects the resolved concrete
- * slugs into every `openrouter/auto` request through OpenCode's `chat.params`
- * hook.
+ * slugs into every `openrouter/auto` request.
+ *
+ * OpenCode API support: the default export carries BOTH entrypoints. V1 hosts
+ * (OpenCode 1.18.x) call `server()` and use the `chat.params`/`config` hooks;
+ * V2 hosts (OpenCode 2.x) call `setup(ctx)` and use `ctx.session.hook("context",
+ * ...)` plus `ctx.model.transform` (options arrive via `ctx.options` instead of
+ * a second argument). Per the official migration guide, a package may expose
+ * both from one export; the APIs remain separate and are not translated.
+ * @see https://opencode.ai/v2/docs/build/plugins/migrate-v1
  *
  * The per-request list overrides the account-level Auto Router allowlist
  * ("Prevent overrides" must be OFF, which is the default), so this works even
@@ -197,5 +204,57 @@ export default {
         options_.plugins = [...existing.filter((plugin) => plugin?.id !== "auto-router"), autoRouter]
       },
     }
+  },
+
+  /**
+   * V2 entrypoint (OpenCode 2.x). V1 hosts ignore it; V2 hosts ignore
+   * `server()` above. Options arrive via `ctx.options` instead of the V1
+   * second argument. Hooks/transforms are registered in `setup` and stay
+   * active for the plugin's lifetime (auto-disposed on unload).
+   * @param {import("@opencode/plugin").PluginInput} ctx
+   */
+  async setup(ctx) {
+    config = ctx.options ?? {}
+    // Warm the cache so the first request does not wait on the network.
+    await resolveSlugs()
+
+    // V2 equivalent of the V1 `config` hook: make `openrouter/auto` the
+    // default model. Only writes when a model is unset, unless
+    // forceDefaultModel is enabled. `--model` and an explicit `model` in a
+    // *project* config still win at call time.
+    if (config.setDefaultModel !== false) {
+      await ctx.model.transform((editor) => {
+        const current = editor.default.get()
+        if (config.forceDefaultModel === true || !current) {
+          editor.default.set(PROVIDER_ID, MODEL_ID)
+        }
+      })
+    }
+
+    // V2 equivalent of the V1 `chat.params` hook: runs right before model
+    // dispatch. Scoped to the openrouter provider; the event's `model` is
+    // double-checked inside because `providerID` filters requests, not
+    // individual model IDs.
+    await ctx.session.hook(
+      "context",
+      async (event) => {
+        if (event.model?.providerID !== PROVIDER_ID) return
+        if (event.model?.id !== MODEL_ID) return
+
+        const models = await resolveSlugs()
+        if (!models.length) return
+
+        const costTier = config.costTier ?? DEFAULT_COST_TIER
+        const options_ = event.options
+        const existing = Array.isArray(options_.plugins) ? options_.plugins : []
+        const autoRouter = {
+          id: "auto-router",
+          allowed_models: models,
+          ...(costTier ? { cost_tier: costTier } : {}),
+        }
+        options_.plugins = [...existing.filter((plugin) => plugin?.id !== "auto-router"), autoRouter]
+      },
+      { providerID: PROVIDER_ID },
+    )
   },
 }
