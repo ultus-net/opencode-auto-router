@@ -21,5 +21,7 @@ jobs:
         run: npm run build
       - name: Test
         run: npm test
+      - name: Smoke
+        run: npm run smoke
       - name: Validate package.json
         run: node -e "JSON.parse(require('fs').readFileSync('package.json','utf8')); console.log('ok')"

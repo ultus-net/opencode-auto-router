@@ -36,7 +36,10 @@ Auto Router", which the old name no longer described.
   `smallModel` when unset (`setDefaultModel` / `setSmallModel`).
 - Unit tests for config normalization, catalog mapping, alias resolution, and
   the failover controller (`npm test`, `node:test`).
-- CI now runs install, typecheck, build, and test.
+- `npm run smoke`: a hermetic fake-host test that drives the built plugin's
+  `setup()` (registration, defaults, injection, failover) with the network
+  stubbed, so the whole wiring is exercisable offline.
+- CI now runs install, typecheck, build, test, and smoke.
 
 ### Changed
 - **Breaking:** the legacy V1 `server()` entrypoint is removed. Failover relies

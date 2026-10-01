@@ -245,6 +245,7 @@ npm install
 npm run typecheck   # tsc --noEmit
 npm run build       # tsc -> dist/
 npm test            # compile tests, run node:test
+npm run smoke       # build + drive setup() against a fake host (offline)
 ```
 
 Source layout:
@@ -258,6 +259,7 @@ Source layout:
 | `src/models.ts` | Pure catalog → OpenCode `Model.Info` mapping |
 | `src/failover.ts` | Retryable-error decision + cross-provider controller |
 | `src/config.ts` | Option normalization and defaults |
+| `scripts/smoke.mjs` | Fake-host smoke test for the built plugin (`npm run smoke`) |
 
 ## Verify it's working
 
