@@ -43,6 +43,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsc -p tsconfig.test.json && node --test \".tmp-tests/**/*.test.js\"",
     "smoke": "npm run build && node scripts/smoke.mjs",
+    "e2e:openrouter": "npm run build && node scripts/e2e-openrouter.mjs",
+    "prepare": "npm run build",
     "prepublishOnly": "npm run build"
   },
   "peerDependencies": {
