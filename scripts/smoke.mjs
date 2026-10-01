@@ -10,7 +10,14 @@
  */
 
 import assert from "node:assert/strict"
-import plugin from "../dist/index.js"
+import fs from "node:fs"
+
+// Isolate the plugin's disk cache BEFORE importing it, so the smoke test never
+// reads a real ~/.cache catalog. cache.ts snapshots XDG_CACHE_HOME at import.
+const cacheHome = new URL("../.tmp-smoke-cache", import.meta.url).pathname
+fs.rmSync(cacheHome, { recursive: true, force: true })
+process.env.XDG_CACHE_HOME = cacheHome
+const { default: plugin } = await import("../dist/index.js")
 
 const SYNTHETIC_BODY = {
   data: [
@@ -174,6 +181,9 @@ assert.deepEqual(synModels, ["syn:large:text", "syn:small:text"], "synthetic mod
 const large = providerRecords.get("synthetic").models.get("syn:large:text")
 assert.deepEqual(large.variants.map((v) => v.id), ["none", "low", "high"])
 assert.deepEqual(large.limit, { context: 524288, output: 65536 })
+// The alias is registered under its own id (unique, stable, no collision with
+// the concrete model it currently routes to).
+assert.equal(large.name, "syn:large:text")
 
 assert.ok(providerRecords.get("openrouter").models.has("openrouter/auto"))
 

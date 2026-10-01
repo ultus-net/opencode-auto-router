@@ -1,5 +1,7 @@
 node_modules/
 dist/
 .tmp-tests/
+.tmp-smoke-cache/
+.tmp-*/
 *.log
 .DS_Store

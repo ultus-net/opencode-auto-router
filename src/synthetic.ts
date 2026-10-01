@@ -30,6 +30,7 @@ interface RawModel {
   input_modalities?: string[]
   output_modalities?: string[]
   reasoning_parameters?: { efforts?: string[] }
+  supported_features?: string[]
   pricing?: RawPricing
   created?: number
 }
@@ -69,10 +70,17 @@ export function mapSyntheticModel(raw: RawModel): SyntheticModel | undefined {
         }
   return {
     id: raw.id,
-    name: raw.display_name ?? raw.name ?? raw.id,
+    // Synthetic sets `name` to the alias id and `display_name` to the concrete
+    // model it routes to (e.g. id/name "syn:large:text", display_name
+    // "DeepSeek V4.1 Flash"). The alias id is the stable, unique name; the
+    // display_name is kept only as a human-readable `target`.
+    name: raw.name ?? raw.id,
+    target: raw.display_name,
     context: raw.context_length ?? 200_000,
     output: raw.max_output_length ?? 32_000,
     input: toInputModalities(raw.input_modalities),
+    tools: raw.supported_features?.includes("tools") ?? true,
+    structuredOutput: raw.supported_features?.includes("structured_outputs") ?? false,
     reasoning: efforts.length > 0,
     efforts,
     released: raw.created,

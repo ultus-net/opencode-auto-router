@@ -41,6 +41,16 @@ Auto Router", which the old name no longer described.
   stubbed, so the whole wiring is exercisable offline.
 - CI now runs install, typecheck, build, test, and smoke.
 
+### Fixed
+- **Provider settings no longer 400 after upgrading from a pre-2.0 cache.** The
+  on-disk Synthetic catalog is now versioned and re-validated on load, and
+  `capabilities.tools` is coerced to a strict boolean. A cache written by an
+  older plugin (which omitted `tools` and stored the display name as `name`)
+  previously fed `undefined` into `Model.Capabilities.tools`, making OpenCode
+  reject the whole `/api/model` response with
+  `Expected boolean at ["data"][…]["capabilities"]["tools"]`. Stale caches are
+  now discarded and refetched. See `src/cache.ts`, `src/models.ts`.
+
 ### Changed
 - **Breaking:** the legacy V1 `server()` entrypoint is removed. Failover relies
   on the V2 event stream and catalog transforms, which have no V1 equivalent.

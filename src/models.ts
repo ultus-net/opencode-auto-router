@@ -43,9 +43,15 @@ export function syntheticModelInfo(model: SyntheticModel): ModelDraft {
 
   return {
     ...base(SYNTHETIC_PROVIDER_ID, model.id),
-    name: model.name,
+    // The alias id IS the name: Synthetic's `display_name` names the concrete
+    // model an alias currently routes to, which collides with that model's own
+    // entry and churns on every rotation. `syn:large:text` is unique, stable,
+    // and exactly what the Supported Models table documents.
+    name: model.id,
     family: model.id,
-    capabilities: { tools: true, input: model.input, output: ["text"] },
+    // `Model.Capabilities.tools` is a strict boolean; never let an untyped or
+    // legacy catalog value (e.g. `undefined`) reach the provider transform.
+    capabilities: { tools: model.tools !== false, input: model.input, output: ["text"] },
     limit: { context: model.context, output: model.output },
     cost,
     // Synthetic reports the reasoning efforts it accepts per alias; expose each
