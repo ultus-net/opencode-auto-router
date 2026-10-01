@@ -36,21 +36,25 @@ import {
   OPENROUTER_AUTO_MODEL_ID,
   OPENROUTER_PROVIDER_ID,
   PLUGIN_ID,
+  SYNTHETIC_AUTO_MODEL_ID,
   SYNTHETIC_PROVIDER_ID,
 } from "./constants.js"
 import { FailoverController, type FailoverHost, type ModelRef, type ReplayCandidate, type RetryEvent } from "./failover.js"
 import { log } from "./log.js"
 import {
+  buildAutoModel,
   openRouterAutoModelInfo,
   syntheticModelInfo,
   type ModelDraft,
 } from "./models.js"
+import { resolveAgentModel } from "./routing.js"
 import { currentSynthetic, resolveOpenRouterPool, warm } from "./state.js"
 import type { ResolvedConfig } from "./types.js"
 
 export { resolveConfig } from "./config.js"
 export { FailoverController, isRetryable } from "./failover.js"
 export type { ReplayCandidate, RetryEvent, RetryDecision } from "./failover.js"
+export { resolveAgentModel } from "./routing.js"
 export { resolvePool, aliasTargets } from "./openrouter.js"
 export { mapSyntheticModel } from "./synthetic.js"
 
@@ -82,7 +86,11 @@ async function registerModels(ctx: Context, config: ResolvedConfig): Promise<voi
     if (cached && cached.aliases.length > 0) {
       const models = select(cached.aliases)
       if (models.length > 0) {
-        merge(SYNTHETIC_PROVIDER_ID, models.map(syntheticModelInfo))
+        merge(SYNTHETIC_PROVIDER_ID, [
+          // syn:auto remaps to the configured primary alias.
+          buildAutoModel(config.primaryModel),
+          ...models.map(syntheticModelInfo),
+        ])
       }
     }
     merge(OPENROUTER_PROVIDER_ID, [openRouterAutoModelInfo()])
@@ -102,9 +110,12 @@ async function refreshCatalogs(ctx: Context, config: ResolvedConfig): Promise<vo
 
 /** Set the default model and the small/title model. */
 async function setDefaults(ctx: Context, config: ResolvedConfig): Promise<void> {
+  // The default model is the router alias `syn:auto`, which remaps to
+  // `primaryModel` upstream. Selecting the alias (not the concrete id) keeps the
+  // picker honest and lets one option retarget every unrouted request.
   const primary: ModelRef = {
     providerID: SYNTHETIC_PROVIDER_ID,
-    id: config.primaryModel,
+    id: SYNTHETIC_AUTO_MODEL_ID,
   }
 
   if (config.setDefaultModel) {
@@ -127,6 +138,35 @@ async function setDefaults(ctx: Context, config: ResolvedConfig): Promise<void> 
       })
     })
   }
+}
+
+/**
+ * Point router-managed agents at their routed Synthetic alias. This is the
+ * supported coarse-routing lever: OpenCode resolves an agent's model for every
+ * request it serves (including each tool continuation), whereas per-request
+ * model selection is not exposed to plugins. See `routing.ts`.
+ */
+async function applyAgentRouting(ctx: Context, config: ResolvedConfig): Promise<void> {
+  if (config.agentRoutes.length === 0 && !config.defaultAgentModel) return
+  await ctx.agent.transform((editor) => {
+    for (const agent of editor.list()) {
+      const id = String(agent.id)
+      const provider = agent.model?.providerID
+      const target = resolveAgentModel(
+        {
+          id,
+          // A model without a providerID counts as unset; only stringify a real
+          // id, so the caller never fabricates "undefined"/"null".
+          model: provider == null ? undefined : { providerID: String(provider) },
+        },
+        config,
+      )
+      if (!target) continue
+      editor.update(id, (draft) => {
+        draft.model = target as unknown as typeof draft.model
+      })
+    }
+  })
 }
 
 /** Inject the resolved `~…-latest` pool into every `openrouter/auto` request. */
@@ -217,6 +257,7 @@ export default Plugin.define({
     await registerModels(ctx, config)
     void refreshCatalogs(ctx, config)
     await setDefaults(ctx, config)
+    await applyAgentRouting(ctx, config)
     await registerAutoRouterInjection(ctx, config)
 
     const controller = new FailoverController(config, makeFailoverHost(ctx))

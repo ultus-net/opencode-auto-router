@@ -14,6 +14,7 @@ import { Model } from "@opencode/plugin"
 import {
   OPENROUTER_AUTO_MODEL_ID,
   OPENROUTER_PROVIDER_ID,
+  SYNTHETIC_AUTO_MODEL_ID,
   SYNTHETIC_PROVIDER_ID,
 } from "./constants.js"
 import type { SyntheticModel } from "./types.js"
@@ -26,6 +27,24 @@ function base(providerID: string, id: string): ModelDraft {
     providerID as ModelDraft["providerID"],
     id as ModelDraft["id"],
   ) as ModelDraft
+}
+
+/**
+ * The router's own `syn:auto` alias. It is not a Synthetic category; the plugin
+ * registers it and remaps it to the configured concrete alias through
+ * `modelID`, so `synthetic/syn:auto` sends a real Synthetic id upstream while
+ * the picker shows a stable, intention-revealing name.
+ */
+export function buildAutoModel(autoModel: string): ModelDraft {
+  return {
+    ...base(SYNTHETIC_PROVIDER_ID, SYNTHETIC_AUTO_MODEL_ID),
+    modelID: autoModel as ModelDraft["modelID"],
+    name: SYNTHETIC_AUTO_MODEL_ID,
+    family: SYNTHETIC_AUTO_MODEL_ID,
+    capabilities: { tools: true, input: ["text", "image"], output: ["text"] },
+    status: "active",
+    enabled: true,
+  } as unknown as ModelDraft
 }
 
 /** Build an OpenCode model definition for one Synthetic `syn:*` alias. */

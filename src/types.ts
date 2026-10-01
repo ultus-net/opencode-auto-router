@@ -21,6 +21,28 @@ export interface FailoverConfig {
   retryDelayMs?: number
 }
 
+/** One ordered agent-id pattern -> Synthetic alias route. */
+export interface AgentRoute {
+  /** Regex tested against the agent id (case-insensitive). */
+  match: string
+  /** Synthetic `syn:*` alias the matching agents use. */
+  model: string
+}
+
+export interface RoutingConfig {
+  /**
+   * Ordered routes applied by `ctx.agent.transform`. First matching pattern
+   * wins. Defaults to `DEFAULT_AGENT_ROUTES`.
+   */
+  agentRoutes?: AgentRoute[]
+  /**
+   * Alias for agents that match no route. Default `syn:auto` (the router alias,
+   * which itself remaps to `primaryModel`). Set to `""` to leave unmatched
+   * agents untouched.
+   */
+  defaultAgentModel?: string
+}
+
 export interface PluginOptions {
   /** Explicit Synthetic `syn:*` ids to register. Default: all `syn:*` in the catalog. */
   syntheticModels?: string[]
@@ -31,6 +53,9 @@ export interface PluginOptions {
   primaryModel?: string
   /** Secondary/vision Synthetic model id for lightweight requests. */
   smallModel?: string
+
+  /** Agent-level routing (the supported V2 lever; see `routing.ts`). */
+  routing?: RoutingConfig
 
   /** Override the `~…-latest` pool fed to the Auto Router. */
   aliases?: string[]
@@ -56,6 +81,10 @@ export interface ResolvedConfig {
   syntheticModels: string[]
   primaryModel: string
   smallModel: string
+  /** Ordered agent-id routes, normalized (invalid/blank entries dropped). */
+  agentRoutes: AgentRoute[]
+  /** Alias for unmatched agents; `""` keeps them untouched. */
+  defaultAgentModel: string
   aliases: string[]
   costTier: string | undefined
   setDefaultModel: boolean

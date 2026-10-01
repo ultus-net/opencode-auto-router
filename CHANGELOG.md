@@ -12,6 +12,15 @@ OpenRouter aliases work" to "Synthetic-primary with automatic failover to the
 Auto Router", which the old name no longer described.
 
 ### Added
+- **Agent-level model routing and the `syn:auto` alias.** A plugin-registered
+  `synthetic/syn:auto` model remaps (via `modelID`) to the configured primary
+  alias, and `ctx.agent.transform` points router-managed agents at `syn:*`
+  aliases by ordered id patterns (heavy → `syn:large:text`, research/light →
+  `syn:small:text`, vision → `syn:large:vision`; unmatched agents →
+  `syn:auto`). This is the supported V2 lever: request
+  hooks keep `model` readonly, so per-call routing is not expressible in a
+  plugin. Agents pinned to another provider are never modified. Configurable via
+  the `routing` option; see `src/routing.ts`.
 - **Synthetic as the primary provider.** The plugin discovers Synthetic's
   permanent `syn:*` category aliases (`syn:large:text`, `syn:small:text`,
   `syn:large:vision`, `syn:small:vision`) from
@@ -32,8 +41,9 @@ Auto Router", which the old name no longer described.
   they arrive, so a slow or offline network does not delay startup.
 - **TypeScript.** …the package is now authored in TypeScript, compiled to
   `dist/`.
-- Default model and the built-in `title` agent are set from `primaryModel` /
-  `smallModel` when unset (`setDefaultModel` / `setSmallModel`).
+- Default model is `synthetic/syn:auto` (remaps to `primaryModel`), and the
+  built-in `title` agent is set from `smallModel`, when unset (`setDefaultModel`
+  / `setSmallModel`).
 - Unit tests for config normalization, catalog mapping, alias resolution, and
   the failover controller (`npm test`, `node:test`).
 - `npm run smoke`: a hermetic fake-host test that drives the built plugin's
