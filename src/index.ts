@@ -86,7 +86,8 @@ async function registerModels(ctx: Context, config: ResolvedConfig): Promise<voi
       const models = select(cached.aliases)
       if (models.length > 0) {
         merge(SYNTHETIC_PROVIDER_ID, [
-          buildAutoModel(config.autoModel),
+          // syn:auto remaps to the configured primary alias.
+          buildAutoModel(config.primaryModel),
           ...models.map(syntheticModelInfo),
         ])
       }

@@ -81,9 +81,7 @@ export interface ResolvedConfig {
   syntheticModels: string[]
   primaryModel: string
   smallModel: string
-  /** Concrete alias `syn:auto` remaps to (Synthetic's upstream id). */
-  autoModel: string
-  /** Ordered agent-id routes, normalized (patterns that don't compile dropped). */
+  /** Ordered agent-id routes, normalized (invalid/blank entries dropped). */
   agentRoutes: AgentRoute[]
   /** Alias for unmatched agents; `""` keeps them untouched. */
   defaultAgentModel: string

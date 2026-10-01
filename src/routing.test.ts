@@ -3,11 +3,11 @@ import assert from "node:assert/strict"
 
 import { resolveConfig } from "./config.js"
 import { resolveAgentModel } from "./routing.js"
-import { SYNTHETIC_PRIMARY_MODEL_ID } from "./constants.js"
+import { SYNTHETIC_AUTO_MODEL_ID } from "./constants.js"
 
 const cfg = resolveConfig()
 
-test("routes known roles by pattern and defaults the rest", () => {
+test("routes known roles by pattern and defaults the rest to syn:auto", () => {
   // Heavy roles -> large text.
   assert.equal(resolveAgentModel({ id: "reviewer" }, cfg)?.id, "syn:large:text")
   assert.equal(resolveAgentModel({ id: "build" }, cfg)?.id, "syn:large:text")
@@ -15,8 +15,8 @@ test("routes known roles by pattern and defaults the rest", () => {
   assert.equal(resolveAgentModel({ id: "explore" }, cfg)?.id, "syn:small:text")
   // Vision roles -> large vision.
   assert.equal(resolveAgentModel({ id: "screenshot-analyzer" }, cfg)?.id, "syn:large:vision")
-  // No pattern -> configured default.
-  assert.equal(resolveAgentModel({ id: "totally-unknown" }, cfg)?.id, SYNTHETIC_PRIMARY_MODEL_ID)
+  // No pattern -> the router alias (which remaps to primary upstream).
+  assert.equal(resolveAgentModel({ id: "totally-unknown" }, cfg)?.id, SYNTHETIC_AUTO_MODEL_ID)
   // Every routed target lives on the Synthetic provider.
   assert.equal(resolveAgentModel({ id: "build" }, cfg)?.providerID, "synthetic")
 })
@@ -39,22 +39,34 @@ test("the title agent is owned by setDefaults, not routing", () => {
 })
 
 test("agents pinned to another provider are left alone", () => {
-  // An explicit non-Synthetic choice must survive.
   assert.equal(
     resolveAgentModel({ id: "build", model: { providerID: "anthropic" } }, cfg),
     undefined,
   )
 })
 
-test("unset and Synthetic-pinned agents are (re)routed", () => {
+test("unset-provider agents are routable (missing providerID counts as unset)", () => {
   assert.equal(resolveAgentModel({ id: "build" }, cfg)?.id, "syn:large:text")
+  // A model object without a providerID is treated as unset, not as a foreign pin.
+  assert.equal(resolveAgentModel({ id: "build", model: {} }, cfg)?.id, "syn:large:text")
   assert.equal(
     resolveAgentModel({ id: "build", model: { providerID: "synthetic" } }, cfg)?.id,
     "syn:large:text",
   )
 })
 
-test("routing can be disabled by emptying routes and defaultAgentModel", () => {
+test("an unmatched agent with defaultAgentModel '' is left untouched", () => {
+  const c = resolveConfig({
+    routing: {
+      agentRoutes: [{ match: "build", model: "syn:large:text" }],
+      defaultAgentModel: "",
+    },
+  })
+  assert.equal(resolveAgentModel({ id: "build" }, c)?.id, "syn:large:text")
+  assert.equal(resolveAgentModel({ id: "unmatched" }, c), undefined)
+})
+
+test("routing can be disabled entirely", () => {
   const c = resolveConfig({ routing: { agentRoutes: [], defaultAgentModel: "" } })
   assert.equal(resolveAgentModel({ id: "build" }, c), undefined)
   assert.equal(resolveAgentModel({ id: "explore" }, c), undefined)

@@ -13,6 +13,7 @@ import {
   DEFAULT_FAILOVER_MESSAGE_MATCHES,
   DEFAULT_FAILOVER_STATUSES,
   DEFAULT_REQUEST_TIMEOUT_MS,
+  SYNTHETIC_AUTO_MODEL_ID,
   SYNTHETIC_PRIMARY_MODEL_ID,
   SYNTHETIC_SMALL_MODEL_ID,
 } from "./constants.js"
@@ -29,10 +30,16 @@ function stringArray(value: unknown, fallback: readonly string[]): string[] {
   return items.length > 0 ? items : [...fallback]
 }
 
+/** A non-empty `syn:*` alias, else `fallback`. */
+function synAlias(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.startsWith("syn:") ? value : fallback
+}
+
 /**
  * A route is kept only when `match` compiles as a regex and `model` is a
- * non-empty string. An invalid pattern is dropped rather than allowed to throw
- * at transform time, where it would break every agent.
+ * non-empty `syn:*` alias. Invalid patterns are dropped rather than allowed to
+ * throw at transform time; a `model` outside the `syn:*` namespace is dropped
+ * rather than silently repointing agents at a nonexistent model.
  */
 function validRoutes(value: unknown): AgentRoute[] | undefined {
   if (!Array.isArray(value)) return undefined
@@ -41,7 +48,8 @@ function validRoutes(value: unknown): AgentRoute[] | undefined {
     if (typeof entry !== "object" || entry === null) continue
     const match = (entry as { match?: unknown }).match
     const model = (entry as { model?: unknown }).model
-    if (typeof match !== "string" || typeof model !== "string" || !model) continue
+    if (typeof match !== "string" || typeof model !== "string") continue
+    if (!model.startsWith("syn:")) continue
     try {
       new RegExp(match)
     } catch {
@@ -55,27 +63,20 @@ function validRoutes(value: unknown): AgentRoute[] | undefined {
 export function resolveConfig(options: PluginOptions = {}): ResolvedConfig {
   const failover = options.failover ?? {}
   const routing = options.routing ?? {}
+  const primary = synAlias(options.primaryModel, SYNTHETIC_PRIMARY_MODEL_ID)
   return {
     syntheticModels: Array.isArray(options.syntheticModels)
       ? options.syntheticModels.filter((v) => typeof v === "string" && v.startsWith("syn:"))
       : [],
-    primaryModel:
-      typeof options.primaryModel === "string" && options.primaryModel
-        ? options.primaryModel
-        : SYNTHETIC_PRIMARY_MODEL_ID,
-    smallModel:
-      typeof options.smallModel === "string" && options.smallModel
-        ? options.smallModel
-        : SYNTHETIC_SMALL_MODEL_ID,
-    autoModel:
-      typeof options.primaryModel === "string" && options.primaryModel
-        ? options.primaryModel
-        : SYNTHETIC_PRIMARY_MODEL_ID,
+    primaryModel: primary,
+    smallModel: synAlias(options.smallModel, SYNTHETIC_SMALL_MODEL_ID),
     agentRoutes: validRoutes(routing.agentRoutes) ?? [...DEFAULT_AGENT_ROUTES],
     defaultAgentModel:
       typeof routing.defaultAgentModel === "string"
-        ? routing.defaultAgentModel
-        : SYNTHETIC_PRIMARY_MODEL_ID,
+        ? routing.defaultAgentModel === ""
+          ? "" // explicit opt-out: leave unmatched agents untouched
+          : synAlias(routing.defaultAgentModel, SYNTHETIC_AUTO_MODEL_ID)
+        : SYNTHETIC_AUTO_MODEL_ID,
     aliases: stringArray(options.aliases, DEFAULT_ALIASES),
     costTier:
       typeof options.costTier === "string" && options.costTier

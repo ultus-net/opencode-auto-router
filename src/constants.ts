@@ -23,18 +23,19 @@ export const SYNTHETIC_SMALL_MODEL_ID = "syn:small:text"
 
 /**
  * Friendly plugin-registered alias. Synthetic's catalog has no `syn:auto`
- * category, so the plugin registers this id itself and remaps it to
- * `SYNTHETIC_PRIMARY_MODEL_ID` via the model's `modelID`: requests for
+ * category, so the plugin registers this id itself and remaps it to the
+ * configured `primaryModel` via the model's `modelID`: requests for
  * `synthetic/syn:auto` send a real Synthetic id, while the picker shows the
- * router's default. Chosen as the default for every unconfigured agent.
+ * router's default. It is the routed default for agents that match no route.
  */
 export const SYNTHETIC_AUTO_MODEL_ID = "syn:auto"
 
 /**
  * Default role -> alias routing. Ordered; the first pattern that matches an
- * agent id wins. Deliberately small and legible: heavy roles get the large
- * alias, light/research roles get the small alias, vision roles get the large
- * vision alias. Unmatched agents fall to `SYNTHETIC_AUTO_MODEL_ID`.
+ * agent id wins. Deliberately small and legible: heavy roles get the large text
+ * alias, light/research roles get the small text alias, vision roles get the
+ * large vision alias. Unmatched agents fall to `SYNTHETIC_AUTO_MODEL_ID`.
+ * (`syn:small:vision` is registered and selectable, but not routed by default.)
  */
 export const DEFAULT_AGENT_ROUTES: readonly { match: string; model: string }[] = [
   { match: "vision|image|screenshot|ocr|multimodal", model: "syn:large:vision" },

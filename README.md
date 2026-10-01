@@ -8,8 +8,9 @@ provider and fails over to **OpenRouter's Auto Router** when Synthetic rate-limi
   Synthetic rotates the underlying model; the alias stays put, so nothing is
   pinned by hand.
 - **Routing (`syn:auto`):** a plugin-registered `syn:auto` alias, plus
-  agent-level routing that spreads work across the four aliases by role (heavy
-  roles → large, research/light roles → small, vision roles → large vision).
+  agent-level routing that spreads work across the aliases by role (heavy
+  roles → large, research/light roles → small, vision roles → large vision;
+  unmatched → `syn:auto`).
 - **Failover:** `openrouter/openrouter/auto`, driven by the same
   `~<lab>/<model>-latest` alias workflow this project started with. On a
   retryable Synthetic failure the plugin switches the session to the Auto
@@ -47,8 +48,7 @@ The plugin therefore routes **by role**:
   `syn:large:text`). Selecting `syn:auto` sends a real Synthetic id upstream.
 - It points router-managed agents at aliases by pattern, in order:
   vision roles → `syn:large:vision`; research/light roles → `syn:small:text`;
-  heavy coding roles → `syn:large:text`; anything unmatched → `syn:auto`'s
-  target.
+  heavy coding roles → `syn:large:text`; anything unmatched → `syn:auto`.
 
 An agent that is explicitly pinned to another provider is **never** touched, and
 the title agent stays under `smallModel` ownership. This is coarse routing by
@@ -192,7 +192,7 @@ role, and failover to `openrouter/openrouter/auto` is on.
             { "match": "explore|search|grep|read|title|summar|compact|quick|small|fast", "model": "syn:small:text" },
             { "match": "build|code|coder|edit|implement|plan|review|debug|refactor|general|test", "model": "syn:large:text" }
           ],
-          "defaultAgentModel": "syn:large:text"
+          "defaultAgentModel": "syn:auto"
         },
 
         // OpenRouter Auto Router pool: any aliases; ones with no live target
