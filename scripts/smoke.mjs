@@ -73,6 +73,7 @@ function makeHost() {
     ["explore", { id: "explore", model: undefined }],
     ["image-analyzer", { id: "image-analyzer", model: undefined }],
     ["unmatched-agent", { id: "unmatched-agent", model: undefined }],
+    ["empty-model-agent", { id: "empty-model-agent", model: {} }],
     ["pinned", { id: "pinned", model: { providerID: "anthropic", id: "claude" } }],
   ])
 
@@ -216,6 +217,8 @@ assert.deepEqual(ctx.__agents.get("explore").model, { providerID: "synthetic", i
 assert.deepEqual(ctx.__agents.get("image-analyzer").model, { providerID: "synthetic", id: "syn:large:vision" })
 // Unmatched agents fall to the router alias (which remaps to primary upstream).
 assert.deepEqual(ctx.__agents.get("unmatched-agent").model, { providerID: "synthetic", id: "syn:auto" })
+// A model object without a providerID is treated as unset and routed, not skipped.
+assert.deepEqual(ctx.__agents.get("empty-model-agent").model, { providerID: "synthetic", id: "syn:auto" })
 // An explicit non-Synthetic pin is never clobbered.
 assert.deepEqual(ctx.__agents.get("pinned").model, { providerID: "anthropic", id: "claude" })
 

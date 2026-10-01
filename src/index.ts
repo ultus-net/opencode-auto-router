@@ -147,11 +147,13 @@ async function applyAgentRouting(ctx: Context, config: ResolvedConfig): Promise<
   await ctx.agent.transform((editor) => {
     for (const agent of editor.list()) {
       const id = String(agent.id)
-      const current = agent.model
+      const provider = agent.model?.providerID
       const target = resolveAgentModel(
         {
           id,
-          model: current ? { providerID: String(current.providerID) } : undefined,
+          // A model without a providerID counts as unset; only stringify a real
+          // id, so the caller never fabricates "undefined"/"null".
+          model: provider == null ? undefined : { providerID: String(provider) },
         },
         config,
       )

@@ -36,8 +36,8 @@ export interface RoutingConfig {
    */
   agentRoutes?: AgentRoute[]
   /**
-   * Alias for agents that match no route, and for the plugin's `syn:auto`
-   * remap target. Default `syn:large:text`. Set to `""` to leave unmatched
+   * Alias for agents that match no route. Default `syn:auto` (the router alias,
+   * which itself remaps to `primaryModel`). Set to `""` to leave unmatched
    * agents untouched.
    */
   defaultAgentModel?: string
