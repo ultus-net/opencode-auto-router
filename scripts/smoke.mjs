@@ -181,8 +181,9 @@ assert.deepEqual(synModels, ["syn:large:text", "syn:small:text"], "synthetic mod
 const large = providerRecords.get("synthetic").models.get("syn:large:text")
 assert.deepEqual(large.variants.map((v) => v.id), ["none", "low", "high"])
 assert.deepEqual(large.limit, { context: 524288, output: 65536 })
-// The alias must be distinguishable from the concrete model it targets.
-assert.match(large.name, /syn:large:text/, "alias name must expose its own id")
+// The alias is registered under its own id (unique, stable, no collision with
+// the concrete model it currently routes to).
+assert.equal(large.name, "syn:large:text")
 
 assert.ok(providerRecords.get("openrouter").models.has("openrouter/auto"))
 

@@ -67,11 +67,17 @@ export interface ResolvedConfig {
 
 /** A single Synthetic catalog entry, reduced to what OpenCode needs. */
 export interface SyntheticModel {
+  /** The alias id, e.g. `syn:large:text`. Also used as the display name. */
   id: string
+  /** Alias id (== `id`) from the catalog's `name`. */
   name: string
+  /** Concrete model the alias currently routes to (`display_name`). */
+  target?: string
   context: number
   output: number
   input: ("text" | "image")[]
+  tools: boolean
+  structuredOutput: boolean
   reasoning: boolean
   efforts: string[]
   released?: number

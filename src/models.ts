@@ -43,13 +43,13 @@ export function syntheticModelInfo(model: SyntheticModel): ModelDraft {
 
   return {
     ...base(SYNTHETIC_PROVIDER_ID, model.id),
-    // Keep the alias id visible and searchable: Synthetic's display_name is the
-    // same as the concrete model it routes to, so using it verbatim would make
-    // the alias indistinguishable from (and deduped against) its target in the
-    // model picker. e.g. "syn:large:text (DeepSeek V4.1 Flash)".
-    name: `${model.id} (${model.name})`,
+    // The alias id IS the name: Synthetic's `display_name` names the concrete
+    // model an alias currently routes to, which collides with that model's own
+    // entry and churns on every rotation. `syn:large:text` is unique, stable,
+    // and exactly what the Supported Models table documents.
+    name: model.id,
     family: model.id,
-    capabilities: { tools: true, input: model.input, output: ["text"] },
+    capabilities: { tools: model.tools, input: model.input, output: ["text"] },
     limit: { context: model.context, output: model.output },
     cost,
     // Synthetic reports the reasoning efforts it accepts per alias; expose each
