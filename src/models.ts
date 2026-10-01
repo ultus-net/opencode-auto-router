@@ -49,7 +49,9 @@ export function syntheticModelInfo(model: SyntheticModel): ModelDraft {
     // and exactly what the Supported Models table documents.
     name: model.id,
     family: model.id,
-    capabilities: { tools: model.tools, input: model.input, output: ["text"] },
+    // `Model.Capabilities.tools` is a strict boolean; never let an untyped or
+    // legacy catalog value (e.g. `undefined`) reach the provider transform.
+    capabilities: { tools: model.tools !== false, input: model.input, output: ["text"] },
     limit: { context: model.context, output: model.output },
     cost,
     // Synthetic reports the reasoning efforts it accepts per alias; expose each

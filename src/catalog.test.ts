@@ -2,6 +2,8 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 
 import { mapSyntheticModel } from "./synthetic.js"
+import { normalizeSyntheticModel } from "./cache.js"
+import { syntheticModelInfo } from "./models.js"
 import { aliasTargets, resolvePool } from "./openrouter.js"
 
 test("mapSyntheticModel keeps syn:* aliases and drops concrete ids", () => {
@@ -53,6 +55,49 @@ test("mapSyntheticModel marks text-only models without reasoning effort", () => 
   // No supported_features -> tools defaults to true.
   assert.equal(m?.tools, true)
   assert.equal(m?.cost, undefined)
+})
+
+test("normalizeSyntheticModel repairs legacy caches missing booleans", () => {
+  // Shape written by pre-2.0.0 plugins: no `tools`/`structuredOutput` and a
+  // `name` that is the display name rather than the alias id.
+  const legacy = normalizeSyntheticModel({
+    id: "syn:large:text",
+    name: "DeepSeek V4.1 Flash",
+    context: 524288,
+    output: 65536,
+    input: ["text", "image"],
+    reasoning: true,
+    efforts: ["none", "high"],
+  })
+  assert.ok(legacy)
+  assert.equal(legacy?.tools, true)
+  assert.equal(legacy?.structuredOutput, false)
+  assert.deepEqual(legacy?.input, ["text", "image"])
+
+  // Explicit false must survive so tool-less models stay tool-less.
+  assert.equal(normalizeSyntheticModel({ id: "syn:x", tools: false })?.tools, false)
+
+  // Junk / non-source ids are dropped rather than coerced.
+  assert.equal(normalizeSyntheticModel(null), undefined)
+  assert.equal(normalizeSyntheticModel({ id: "hf:deepseek" }), undefined)
+  assert.equal(normalizeSyntheticModel({ id: 42 }), undefined)
+})
+
+test("syntheticModelInfo always emits a boolean capabilities.tools", () => {
+  const info = syntheticModelInfo({
+    id: "syn:large:text",
+    name: "syn:large:text",
+    context: 200_000,
+    output: 32_000,
+    input: ["text"],
+    // Simulate a legacy/undefined catalog value slipping through.
+    tools: undefined as unknown as boolean,
+    structuredOutput: false,
+    reasoning: false,
+    efforts: [],
+  })
+  assert.equal(typeof info.capabilities.tools, "boolean")
+  assert.equal(info.capabilities.tools, true)
 })
 
 test("aliasTargets maps only ~aliases that resolve", () => {
