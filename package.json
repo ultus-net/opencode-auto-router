@@ -1,15 +1,20 @@
 {
-  "name": "opencode-openrouter-auto-latest",
-  "version": "1.1.0",
-  "description": "OpenCode plugin: use OpenRouter `~…-latest` aliases with the Auto Router (openrouter/auto) without pinning model versions.",
+  "name": "opencode-auto-router",
+  "version": "2.0.0",
+  "description": "OpenCode plugin: Synthetic `syn:*` aliases as the primary provider, automatic failover to OpenRouter's Auto Router (openrouter/auto) with `~…-latest` support — no model version pinning.",
   "type": "module",
-  "main": "index.js",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./index.js"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
   "files": [
-    "index.js",
+    "dist",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "keywords": [
@@ -17,6 +22,8 @@
     "opencode-plugin",
     "openrouter",
     "auto-router",
+    "synthetic",
+    "failover",
     "llm",
     "ai",
     "coding-agent"
@@ -25,12 +32,18 @@
   "author": "Hunter",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ultus-net/opencode-openrouter-auto-latest.git"
+    "url": "git+https://github.com/ultus-net/opencode-auto-router.git"
   },
   "bugs": {
-    "url": "https://github.com/ultus-net/opencode-openrouter-auto-latest/issues"
+    "url": "https://github.com/ultus-net/opencode-auto-router/issues"
   },
-  "homepage": "https://github.com/ultus-net/opencode-openrouter-auto-latest#readme",
+  "homepage": "https://github.com/ultus-net/opencode-auto-router#readme",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.test.json && node --test \".tmp-tests/**/*.test.js\"",
+    "prepublishOnly": "npm run build"
+  },
   "peerDependencies": {
     "@opencode-ai/plugin": ">=1.18.29",
     "@opencode/plugin": ">=2.0.0"
@@ -42,6 +55,11 @@
     "@opencode/plugin": {
       "optional": true
     }
+  },
+  "devDependencies": {
+    "@opencode/plugin": "^2.0.21",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.9.0"
   },
   "engines": {
     "node": ">=18"

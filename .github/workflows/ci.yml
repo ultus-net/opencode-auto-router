@@ -12,7 +12,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Syntax check
-        run: node --check index.js
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+      - name: Test
+        run: npm test
       - name: Validate package.json
         run: node -e "JSON.parse(require('fs').readFileSync('package.json','utf8')); console.log('ok')"

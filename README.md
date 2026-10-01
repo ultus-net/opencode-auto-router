@@ -1,43 +1,40 @@
-# opencode-openrouter-auto-latest
+# opencode-auto-router
 
-An [OpenCode](https://opencode.ai) plugin that lets you drive OpenRouter's
-**Auto Router** with the `~<lab>/<model>-latest` aliases — so you always route
-across the newest frontier models without ever pinning a version by hand.
+An [OpenCode](https://opencode.ai) plugin that makes **Synthetic** your primary
+provider and fails over to **OpenRouter's Auto Router** when Synthetic rate-limits.
 
-```jsonc
-// What you want (and what this plugin makes work):
-"plugins": [{ "id": "auto-router", "allowed_models": ["~anthropic/claude-sonnet-latest", "~openai/gpt-latest", "..."] }]
-```
+- **Primary:** Synthetic's permanent `syn:*` category aliases
+  (`syn:large:text`, `syn:small:text`, `syn:large:vision`, `syn:small:vision`).
+  Synthetic rotates the underlying model; the alias stays put, so nothing is
+  pinned by hand.
+- **Failover:** `openrouter/openrouter/auto`, driven by the same
+  `~<lab>/<model>-latest` alias workflow this project started with. On a
+  retryable Synthetic failure the plugin switches the session to the Auto
+  Router and re-sends your turn.
 
-<p align="center"><em>No manual model switching. No version pinning. Cost-aware routing across current frontier models.</em></p>
+No manual model switching. No version pinning. Automatic recovery on rate limits.
 
 ---
 
-## The goal
+## What it does
 
-Two ideas combine nicely:
+Two independent jobs ride in one package:
 
-1. **`~…-latest` aliases.** OpenRouter publishes aliases like
-   `~anthropic/claude-sonnet-latest` that always point at that lab's newest
-   flagship. Use them and you never have to edit config when a new model ships.
-2. **The Auto Router (`openrouter/auto`).** Instead of hard-pinning one model,
-   OpenRouter classifies each prompt and picks a model from a pool based on
-   real-world usage and a cost band. You get "best model for this task,
-   at the cost level I chose."
+### 1. Registers the Synthetic `syn:*` aliases
 
-Put them together and the intent is:
+Synthetic's `syn:*` aliases are **not** in the public [models.dev](https://models.dev)
+catalog, so OpenCode cannot select them out of the box. The plugin discovers them
+from Synthetic's OpenAI-compatible `/models` endpoint and registers them (with
+context limits, vision capability, reasoning efforts, and pricing) as OpenCode
+models. Only `syn:*` ids are kept — concrete `hf:*` ids are ignored, because the
+point is to never pin a version.
 
-> "Route my work across the *current* frontier models — whatever they happen to
-> be this week — and pick cost-effectively per request."
+### 2. Registers and drives the OpenRouter Auto Router
 
-That is exactly the setup this plugin enables.
-
-## The wall
-
-OpenRouter's Auto Router accepts an `allowed_models` constraint, **but it only
-matches concrete catalog IDs.** The `~…-latest` aliases resolve fine as a
-top-level `model`, but inside `allowed_models` they match **nothing**. The
-candidate pool collapses to zero and every request fails:
+The Auto Router accepts an `allowed_models` constraint, **but it only matches
+concrete catalog ids.** The `~…-latest` aliases resolve fine as a top-level
+`model`, but inside `allowed_models` they match **nothing**. The candidate pool
+collapses to zero and every request fails:
 
 ```
 404  No models match your request and model restrictions
@@ -52,130 +49,113 @@ Verified against the API:
 | `~anthropic/claude-sonnet-latest`          | ❌ 404 |
 | top-level `model: "~anthropic/claude-sonnet-latest"` | ✅ 200 |
 
-So the alias works as a model, but not as a router constraint. This is a nasty
-footgun because the [OpenRouter × OpenCode integration
-guide](https://openrouter.ai/docs/cookbook/coding-agents/opencode-integration)
-recommends exactly those `~…-latest` aliases.
+The plugin resolves each alias to its current concrete slug (`alias_target.slug`)
+on startup and injects that list into every `openrouter/auto` request, so the
+Auto Router keeps working with the alias workflow.
 
-## What this plugin does
+### 3. Fails over automatically
 
-It keeps the `~…-latest` workflow and makes the Auto Router accept it:
+OpenCode does not expose cross-provider failover, and a plugin cannot redirect an
+in-flight request — on every session hook the `model` field is readonly. What a
+plugin *can* do is observe the failure and drive recovery through the session API:
 
-1. On startup (and at most every 6 hours) it reads OpenRouter's public model
-   catalog and maps each `~…-latest` alias to the **concrete slug** it currently
-   points at (`alias_target.slug`).
-2. On every request to `openrouter/auto` it injects that resolved, concrete list
-   as the Auto Router's `allowed_models` (V1: `chat.params` hook; V2: the
-   session's model-request hooks).
-3. The per-request list overrides the saved account-level allowlist
-   (as long as **Prevent overrides** is off — the default), so this works even
-   when your account's Auto Router settings are broken.
-4. It also makes `openrouter/auto` your OpenCode default model when you have not
-   configured one, so a fresh install "just works" without editing config.
+```
+Synthetic request ──► 429 rate limit
+        │
+        ▼
+retry hook         bounds Synthetic retries to one short attempt
+        │
+        ▼
+session.execution.failed (carries the structured error + status)
+        │
+        ▼
+switchModel ──► openrouter/openrouter/auto ──► re-send the last user message
+```
 
-You keep writing `~…-latest`. The plugin keeps translating it into what the
-router actually understands.
+Replay safety: re-sending a turn only happens when the failure is retryable
+(status/message match) and the session is still on Synthetic. A failed fallback
+therefore cannot loop, and the attempt budget (default 1) bounds it further.
 
 > [!IMPORTANT]
 > **OpenRouter's "Prevent overrides" toggle must be OFF** at
-> <https://openrouter.ai/settings/routing>. When it is ON, OpenRouter makes your
-> saved account Auto Router values final and **ignores request-level settings**,
-> so this plugin (or any client) cannot apply its resolved pool. See
+> <https://openrouter.ai/settings/routing> for the Auto Router injection to
+> apply. When it is ON, OpenRouter makes your saved account Auto Router values
+> final and **ignores request-level settings**, so this plugin (or any client)
+> cannot apply its resolved pool. See
 > [Troubleshooting](#404-no-models-match-your-request-and-model-restrictions-after-enabling-prevent-overrides).
+
+## Requirements
+
+- **OpenCode 2.x** (V2 plugin API). Failover uses the V2 event stream and
+  catalog transforms, which have no V1 equivalent, so the legacy `server()`
+  entrypoint is intentionally dropped in 2.0.0.
+- **Node 18+**.
+- A connected **Synthetic** account (`/connect synthetic`) and, for failover, a
+  connected **OpenRouter** account.
 
 ## Install
 
-Requires **OpenCode ≥ 1.18.29** and Node 18+ (1.18.29 is the support floor
-for V1 object entrypoints per the migration guide). The same file supports
-both plugin APIs: OpenCode **1.18.x** uses the V1 `server()` entrypoint, and
-OpenCode **2.x** uses the V2 `setup(ctx)` entrypoint (see
-[the V1→V2 migration guide](https://opencode.ai/v2/docs/build/plugins/migrate-v1)).
-
-### Option A — drop-in file (simplest)
-
-Copy `index.js` into your OpenCode plugin directory. It is auto-discovered; no
-config change needed. The directory name differs by version — V2 uses the
-**plural** `plugins/`:
-
-```bash
-# OpenCode 2.x (V2 discovery directory):
-mkdir -p ~/.config/opencode/plugins
-curl -fsSL https://raw.githubusercontent.com/ultus-net/opencode-openrouter-auto-latest/main/index.js \
-  -o ~/.config/opencode/plugins/openrouter-auto-latest.js
-
-# OpenCode 1.18.x (V1 discovery directory):
-mkdir -p ~/.config/opencode/plugin
-curl -fsSL https://raw.githubusercontent.com/ultus-net/opencode-openrouter-auto-latest/main/index.js \
-  -o ~/.config/opencode/plugin/openrouter-auto-latest.js
-```
-
-Restart OpenCode. Done.
-
-### Option B — reference it in config
+### Option A — from npm
 
 ```jsonc
-// ~/.config/opencode/opencode.jsonc — OpenCode 2.x uses the plural "plugins"
+// ~/.config/opencode/opencode.jsonc
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugins": ["opencode-openrouter-auto-latest"]
+  "plugins": ["opencode-auto-router"]
 }
 ```
 
-OpenCode 1.18.x uses the singular `"plugin"` key with the same value.
-
-### Option C — from GitHub (no npm publish required)
+### Option B — from GitHub (no npm publish required)
 
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugins": ["github:ultus-net/opencode-openrouter-auto-latest"]
+  "plugins": ["github:ultus-net/opencode-auto-router"]
 }
 ```
 
-Then make sure `openrouter/auto` is your model — either select it in the TUI, let
-the plugin set it as your default (see below), or set it explicitly:
+Then connect the providers and restart OpenCode:
 
-```jsonc
-{
-  "model": "openrouter/openrouter/auto"
-}
+```
+/connect synthetic
+/connect openrouter
 ```
 
-> Note the doubled `openrouter/`: OpenCode model IDs are
-> `provider_id/model_id`, and the OpenRouter model is named `openrouter/auto`.
+## Configuration
 
-## Make the Auto Router your default model
-
-The plugin already does this. When you have **not** configured a `model`
-anywhere, it sets OpenCode's default to `openrouter/openrouter/auto` in memory at
-startup — no config file edits. This means you install the plugin, restart
-OpenCode, and the Auto Router is simply your default.
-
-Rules:
-
-- An explicit `model` in any `opencode.json` / `opencode.jsonc` wins.
-- `--model` on the command line always wins.
-- To turn it off: set plugin option `setDefaultModel: false`.
-- To override even an explicit configured model: set `forceDefaultModel: true`.
-
-The plugin does **not** rewrite your config file; it mutates the loaded config
-for the session, so nothing is left behind on disk.
-
-## Configure
-
-Defaults work out of the box. To customize, pass plugin options:
+Defaults work out of the box: Synthetic `syn:large:text` becomes the default
+model, `syn:small:text` serves lightweight/title generation, and failover to
+`openrouter/openrouter/auto` is on.
 
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "openrouter/openrouter/auto",
-  // OpenCode 2.x: object form with a "package" + "options" pair.
-  // OpenCode 1.18.x: tuple form ["github:...", { ...same options... }].
   "plugins": [
     {
-      "package": "github:ultus-net/opencode-openrouter-auto-latest",
+      "package": "opencode-auto-router",
       "options": {
-        // Any aliases you like; ones without a current target are skipped.
+        // Which Synthetic `syn:*` aliases to expose. Default: all of them.
+        "syntheticModels": [
+          "syn:large:text",
+          "syn:small:text",
+          "syn:large:vision",
+          "syn:small:vision"
+        ],
+
+        // Primary / small Synthetic models (used only when setDefaultModel /
+        // setSmallModel are on). Defaults shown.
+        "primaryModel": "syn:large:text",
+        "smallModel": "syn:small:text",
+
+        // Default true: set the default model when none is configured.
+        "setDefaultModel": true,
+        // Default false: also override an explicitly configured model.
+        "forceDefaultModel": false,
+        // Default true: set the built-in `title` agent to `smallModel`.
+        "setSmallModel": true,
+
+        // OpenRouter Auto Router pool: any aliases; ones with no live target
+        // are skipped. Defaults to the built-in frontier list.
         "aliases": [
           "~anthropic/claude-opus-latest",
           "~anthropic/claude-sonnet-latest",
@@ -188,46 +168,44 @@ Defaults work out of the box. To customize, pass plugin options:
         // Omit to use your account's saved Auto Router cost preference.
         "costTier": "high",
 
-        // Default true: make openrouter/auto the default model when none is set.
-        "setDefaultModel": true,
-        // Default false: also override an explicitly configured model.
-        "forceDefaultModel": false
+        // Failover behavior.
+        "failover": {
+          // Default true.
+          "enabled": true,
+          // HTTP statuses that trigger failover. Add 500/502/503 for outages.
+          "statuses": [429],
+          // Fallback message heuristics for providers that omit a status.
+          "messageMatches": ["rate limit", "quota", "overloaded"],
+          // Max automatic cross-provider failovers per user turn.
+          "maxAttempts": 1
+        }
       }
     }
   ]
 }
 ```
 
-If you installed with **Option A**, edit the `DEFAULT_ALIASES` and
-`DEFAULT_COST_TIER` constants at the top of the drop-in file
-(`~/.config/opencode/plugins/openrouter-auto-latest.js` on OpenCode 2.x,
-`~/.config/opencode/plugin/openrouter-auto-latest.js` on 1.18.x) instead.
-
-### Default pool
-
-The default set covers current frontier families across Anthropic, OpenAI,
-Google, xAI, DeepSeek, Z.ai, and Moonshot. Any alias with no live target is
-silently skipped, so the list is safe to keep as-is as models come and go.
-
 ## How it works
 
 ```
-OpenCode request
-      │
-      ▼
-chat.params / context hook  ──►  resolve ~aliases (cached 6h)
-      │                        │
-      │                        ▼
-      │               [ "anthropic/claude-opus-5",
-      │                 "openai/gpt-6-astra", ... ]
-      ▼
-providerOptions.openrouter.plugins = [{ id: "auto-router", allowed_models: [...], cost_tier }]
-      │
-      ▼
-OpenRouter Auto Router picks a concrete model for the prompt + cost band
+Setup
+  ├─ discover Synthetic syn:* aliases  (api.synthetic.new/openai/v1/models)
+  ├─ register syn:* models + openrouter/auto
+  ├─ set default model / title model
+  └─ warm OpenRouter ~…-latest pool
+
+Request (Synthetic)
+  └─ syn:large:text ──► Synthetic
+
+On retryable failure
+  ├─ retry hook bounds Synthetic retries
+  ├─ session.execution.failed (error.status / error.message)
+  └─ switchModel ──► openrouter/openrouter/auto
+                     └─ ~…-latest resolved to concrete slugs
+                        injected as allowed_models
 ```
 
-A real captured request body:
+A real captured Auto Router request body:
 
 ```json
 {
@@ -241,9 +219,7 @@ A real captured request body:
         "openai/gpt-6-astra",
         "google/gemini-3.8-flash",
         "x-ai/grok-4.6",
-        "deepseek/deepseek-v4-pro-0813",
-        "z-ai/glm-5.3",
-        "moonshotai/kimi-k3"
+        "deepseek/deepseek-v4-pro-0813"
       ]
     }
   ],
@@ -251,20 +227,50 @@ A real captured request body:
 }
 ```
 
-Results are cached in memory and on disk
-(`~/.cache/opencode/openrouter-auto-latest.json`) so restarts and brief network
-blips don't break routing.
+Catalogs are cached in memory and on disk for 6 hours, so restarts and brief
+network blips don't break routing:
+
+- Synthetic: `~/.cache/opencode/auto-router-synthetic.json`
+- Set `OPENCODE_AUTO_ROUTER_DEBUG=1` for verbose logging.
+
+## Development
+
+TypeScript, compiled to `dist/`.
+
+```bash
+npm install
+npm run typecheck   # tsc --noEmit
+npm run build       # tsc -> dist/
+npm test            # compile tests, run node:test
+```
+
+Source layout:
+
+| File | Responsibility |
+| --- | --- |
+| `src/index.ts` | Plugin entrypoint; wires registration, defaults, injection, failover |
+| `src/synthetic.ts` | Synthetic `syn:*` catalog discovery and mapping |
+| `src/openrouter.ts` | `~…-latest` alias → concrete slug resolution |
+| `src/state.ts` | Memoized catalogs with disk fallback |
+| `src/models.ts` | Pure catalog → OpenCode `Model.Info` mapping |
+| `src/failover.ts` | Retryable-error decision + cross-provider controller |
+| `src/config.ts` | Option normalization and defaults |
 
 ## Verify it's working
 
 ```bash
+# Primary path
+opencode run --model synthetic/syn:large:text "reply with exactly: it works"
+
+# Failover target (Auto Router with the resolved pool)
 opencode run --model openrouter/openrouter/auto "reply with exactly: it works"
 ```
 
-If your account's saved Auto Router allowlist is broken, the bare request fails
-with the 404 above while this plugin's request succeeds. You can also confirm
-what was sent by checking that the model used is a current flagship — the
-Auto Router reports it in the response's `model` field.
+With `OPENCODE_AUTO_ROUTER_DEBUG=1`, a rate-limit failover logs:
+
+```
+[auto-router] failing over ses_… to openrouter/openrouter/auto
+```
 
 ## Troubleshooting
 
@@ -278,58 +284,57 @@ ignored. If the saved allowlist is unhealthy (for example it contains
 and **no client-side plugin can fix it**. This is by OpenRouter's design, not a
 bug in this plugin.
 
-Verified with Prevent overrides on:
-
-| Request | Result |
-| --- | --- |
-| bare `auto` (saved allowlist) | ❌ 404 |
-| `allowed_models: ["*/*"]` override | ❌ 404 |
-| `allowed_models: ["anthropic/*"]` override | ❌ 404 |
-| OpenCode + this plugin | ❌ 404 |
-
 Pick one:
 
 - **Turn Prevent overrides off.** Then this plugin's per-request allowlist
-  applies again — this is the intended setup.
-- **Or fix the saved allowlist itself** and keep Prevent overrides on. Remove
-  any `~…-latest` aliases; use wildcards (`anthropic/*`) or concrete slugs
-  (`anthropic/claude-sonnet-4.5`). With a healthy saved list, `openrouter/auto`
-  works without any client-side override — and you don't need this plugin.
+  applies again — the intended setup.
+- **Or fix the saved allowlist itself.** Remove any `~…-latest` aliases; use
+  wildcards (`anthropic/*`) or concrete slugs (`anthropic/claude-sonnet-4.5`).
+
+### Synthetic models don't appear in `/models`
+
+The Synthetic provider must be connected before the plugin can register models.
+Run `/connect synthetic`, then restart OpenCode. The plugin only augments a
+provider that is already present, so it never invents or overwrites provider
+settings.
+
+### Failover didn't happen
+
+- Did the error match `failover.statuses` (default `[429]`) or
+  `failover.messageMatches`? Outages (5xx) need to be added explicitly.
+- Was the session still on Synthetic? A failure after failover does not fail
+  over again.
+- Is `failover.enabled` still true?
 
 ## FAQ & caveats
 
+**Does failover replay my turn?**
+Yes, only after a retryable failure, and only when the session is still on
+Synthetic. Rate-limit failures happen before any tool runs, so there are no
+side effects to duplicate.
+
 **Does this replace my account's Auto Router settings?**
 Only the `allowed_models` field, per request. Your saved `excluded_models` and
-cost preference still apply. If you turn on **Prevent overrides**
-(<https://openrouter.ai/settings/routing>), the saved settings become final,
-per-request settings are ignored, and this plugin cannot apply its resolved
-list. Leave **Prevent overrides** off to use this plugin.
+cost preference still apply — as long as **Prevent overrides** is off.
 
-**I'd rather use the account allowlist directly.**
-You can. Just don't put `~…-latest` aliases there; use wildcards (`anthropic/*`)
-or concrete slugs. The Auto Router will not resolve aliases in `allowed_models`.
+**Does it add latency?**
+No per-request network cost: both catalogs are resolved at startup and cached
+for 6 hours (with a disk fallback).
+
+**What about privacy / keys?**
+The plugin never reads your API keys. It calls Synthetic's and OpenRouter's
+public `/models` endpoints (no key) and mutates the request OpenCode was already
+sending. It sends nothing anywhere else.
 
 **Does it work with `openrouter/auto-beta`?**
 Not by default — `auto-beta` reads a different plugin id (`auto-beta-router`)
 and settings. Open an issue if you want it supported.
 
-**Does it add latency?**
-No per-request network cost: aliases are resolved at startup and cached for 6
-hours (with a disk fallback).
-
-**What about privacy / keys?**
-The plugin only calls OpenRouter's public `/models` endpoint (no API key) and
-mutates the request OpenCode was already sending to OpenRouter. It sends
-nothing anywhere else.
-
 ## Uninstall
 
 ```bash
-# OpenCode 2.x:
-rm ~/.config/opencode/plugins/openrouter-auto-latest.js
-# OpenCode 1.18.x:
-rm ~/.config/opencode/plugin/openrouter-auto-latest.js
-# or remove the entry from "plugins" (2.x) / "plugin" (1.18.x) in your opencode config
+# Remove the "plugins" entry from your opencode config, or the drop-in file:
+rm ~/.config/opencode/plugins/opencode-auto-router.js
 ```
 
 ## License
