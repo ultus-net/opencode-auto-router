@@ -38,18 +38,19 @@ import {
   PLUGIN_ID,
   SYNTHETIC_PROVIDER_ID,
 } from "./constants.js"
-import { FailoverController, type FailoverHost, type ModelRef } from "./failover.js"
+import { FailoverController, type FailoverHost, type ModelRef, type ReplayCandidate, type RetryEvent } from "./failover.js"
 import { log } from "./log.js"
 import {
   openRouterAutoModelInfo,
   syntheticModelInfo,
   type ModelDraft,
 } from "./models.js"
-import { resolveOpenRouterPool, resolveSynthetic, warm } from "./state.js"
+import { currentSynthetic, resolveOpenRouterPool, warm } from "./state.js"
 import type { ResolvedConfig } from "./types.js"
 
 export { resolveConfig } from "./config.js"
 export { FailoverController, isRetryable } from "./failover.js"
+export type { ReplayCandidate, RetryEvent, RetryDecision } from "./failover.js"
 export { resolvePool, aliasTargets } from "./openrouter.js"
 export { mapSyntheticModel } from "./synthetic.js"
 
@@ -58,15 +59,9 @@ const REQUEST_KINDS = ["context", "compaction", "generate", "title"] as const
 
 /** Register the Synthetic `syn:*` models and the OpenRouter Auto Router model. */
 async function registerModels(ctx: Context, config: ResolvedConfig): Promise<void> {
-  const catalog = await resolveSynthetic(config)
-
   const requested = config.syntheticModels
-  const models =
-    catalog === undefined
-      ? []
-      : requested.length > 0
-        ? catalog.aliases.filter((m) => requested.includes(m.id))
-        : catalog.aliases
+  const select = <T extends { id: string }>(all: T[]): T[] =>
+    requested.length > 0 ? all.filter((m) => requested.includes(m.id)) : all
 
   await ctx.provider.transform((editor) => {
     // `models.set` REPLACES a provider's whole inventory, so merge with what is
@@ -83,11 +78,26 @@ async function registerModels(ctx: Context, config: ResolvedConfig): Promise<voi
       editor.models.set(providerID, [...merged.values()])
     }
 
-    if (models.length > 0) {
-      merge(SYNTHETIC_PROVIDER_ID, models.map(syntheticModelInfo))
+    const cached = currentSynthetic()
+    if (cached && cached.aliases.length > 0) {
+      const models = select(cached.aliases)
+      if (models.length > 0) {
+        merge(SYNTHETIC_PROVIDER_ID, models.map(syntheticModelInfo))
+      }
     }
     merge(OPENROUTER_PROVIDER_ID, [openRouterAutoModelInfo()])
   })
+}
+
+/** Fetch fresh catalogs and reload the registrations that depend on them. */
+async function refreshCatalogs(ctx: Context, config: ResolvedConfig): Promise<void> {
+  await warm(config)
+  try {
+    await ctx.provider.reload()
+    log.debug("reloaded providers after catalog refresh")
+  } catch (error) {
+    log.warn("provider reload after catalog refresh failed", error)
+  }
 }
 
 /** Set the default model and the small/title model. */
@@ -166,31 +176,26 @@ function makeFailoverHost(ctx: Context): FailoverHost {
       if (!model) return undefined
       return { providerID: model.providerID, id: model.id }
     },
-    async lastUserText(sessionID: string): Promise<string | undefined> {
+    async replayCandidate(sessionID: string): Promise<ReplayCandidate | undefined> {
       const messages = await ctx.session.context({ sessionID })
+      let text: string | undefined
+      let safe = true
+      // Walk backwards to the most recent user message: that is the turn that
+      // just failed. Any assistant message after it means the turn already
+      // produced output or ran tools, so replaying it is not safe.
       for (let i = messages.length - 1; i >= 0; i -= 1) {
-        const message = messages[i] as unknown as {
-          type?: string
-          content?: unknown
-          text?: string
-        }
+        const message = messages[i]
         if (!message) continue
-        if (message.type !== "user") continue
-        if (typeof message.text === "string" && message.text.trim()) {
-          return message.text
+        if (message.type === "user") {
+          text = message.text
+          break
         }
-        if (Array.isArray(message.content)) {
-          const text = message.content
-            .map((part) => {
-              const p = part as { type?: string; text?: string }
-              return p.type === "text" && typeof p.text === "string" ? p.text : ""
-            })
-            .join("")
-            .trim()
-          if (text) return text
+        if (message.type === "assistant" && message.content.length > 0) {
+          safe = false
         }
       }
-      return undefined
+      if (typeof text !== "string" || !text.trim()) return undefined
+      return { text, safe }
     },
     async switchModel(sessionID: string, model: ModelRef): Promise<void> {
       await ctx.session.switchModel({ sessionID, model })
@@ -206,10 +211,11 @@ export default Plugin.define({
   async setup(ctx) {
     const config = resolveConfig(ctx.options)
 
-    // Warm both catalogs so the first request does not wait on the network.
-    await warm(config)
-
+    // Register from whatever catalog we already have (disk cache, if any) so
+    // setup does not block on the network. Then refresh in the background and
+    // reload the providers once fresh data arrives.
     await registerModels(ctx, config)
+    void refreshCatalogs(ctx, config)
     await setDefaults(ctx, config)
     await registerAutoRouterInjection(ctx, config)
 
@@ -221,7 +227,7 @@ export default Plugin.define({
       await ctx.session.hook(
         "retry",
         (event) => {
-          controller.boundRetry(event as never)
+          controller.boundRetry(event as unknown as RetryEvent)
         },
         { providerID: SYNTHETIC_PROVIDER_ID },
       )

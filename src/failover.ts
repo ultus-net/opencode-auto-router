@@ -16,10 +16,11 @@
  *      last user message with `prompt`.
  *
  * Replay safety: re-sending a turn is only safe when nothing has happened yet.
- * A rate-limit failure occurs before any assistant/tool content is produced, so
- * gating on "no tool content in the failed turn" keeps side effects from
- * duplicating. The controller refuses to fail over when the session is no
- * longer on Synthetic, so a failed fallback cannot loop.
+ * A turn that already produced assistant content or ran a tool is not replayed,
+ * because re-sending it would duplicate side effects. `replayCandidate` reports
+ * whether the last turn is still safe to replay; the controller refuses to fail
+ * over when it is not. The controller also refuses when the session is no longer
+ * on Synthetic, so a failed fallback cannot loop.
  */
 
 import { OPENROUTER_AUTO_MODEL_ID, OPENROUTER_PROVIDER_ID, SYNTHETIC_PROVIDER_ID } from "./constants.js"
@@ -37,10 +38,34 @@ export interface ModelRef {
   id: string
 }
 
+/** A candidate turn to replay after a failover, with a safety verdict. */
+export interface ReplayCandidate {
+  /** The user-authored text of the last turn. */
+  text: string
+  /**
+   * False when the failed turn already produced assistant output or ran tools.
+   * Replaying such a turn would duplicate side effects, so the controller
+   * refuses to fail over on an unsafe turn.
+   */
+  safe: boolean
+}
+
+/** A retry-hook decision, mutable so the hook can override it. */
+export type RetryDecision = { retry: false } | { retry: true; delay: number }
+
+/** The subset of the V2 `retry` hook event this controller reads. */
+export interface RetryEvent {
+  model: ModelRef
+  error: StructuredError
+  attempt: number
+  decision: RetryDecision
+}
+
 /** Injected session operations, so the controller is unit-testable. */
 export interface FailoverHost {
   getSessionModel(sessionID: string): Promise<ModelRef | undefined>
-  lastUserText(sessionID: string): Promise<string | undefined>
+  /** Last user turn plus whether replaying it is safe. */
+  replayCandidate(sessionID: string): Promise<ReplayCandidate | undefined>
   switchModel(sessionID: string, model: ModelRef): Promise<void>
   prompt(sessionID: string, text: string): Promise<unknown>
 }
@@ -90,12 +115,7 @@ export class FailoverController {
    * sustained rate limit reaches `session.execution.failed` promptly.
    * Returns true when it modified the decision.
    */
-  boundRetry(event: {
-    model: ModelRef
-    error: StructuredError
-    attempt: number
-    decision: { retry: false } | { retry: true; delay: number }
-  }): boolean {
+  boundRetry(event: RetryEvent): boolean {
     if (!this.enabled) return false
     if (event.model.providerID !== SYNTHETIC_PROVIDER_ID) return false
     if (!isRetryable(event.error, this.config)) return false
@@ -131,9 +151,16 @@ export class FailoverController {
         return
       }
 
-      const text = await this.host.lastUserText(sessionID)
-      if (!text) {
+      const candidate = await this.host.replayCandidate(sessionID)
+      if (!candidate) {
         log.warn("no user message to replay; skipping failover for", sessionID)
+        return
+      }
+      if (!candidate.safe) {
+        log.warn(
+          "failed turn already produced output or ran tools; not replaying (would duplicate side effects) for",
+          sessionID,
+        )
         return
       }
 
@@ -145,7 +172,7 @@ export class FailoverController {
         id: OPENROUTER_AUTO_MODEL_ID,
       })
       state.attempts += 1
-      await this.host.prompt(sessionID, text)
+      await this.host.prompt(sessionID, candidate.text)
     } catch (failure) {
       log.warn("failover attempt failed", failure)
     } finally {

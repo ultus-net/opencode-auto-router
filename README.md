@@ -25,9 +25,9 @@ Two independent jobs ride in one package:
 Synthetic's `syn:*` aliases are **not** in the public [models.dev](https://models.dev)
 catalog, so OpenCode cannot select them out of the box. The plugin discovers them
 from Synthetic's OpenAI-compatible `/models` endpoint and registers them (with
-context limits, vision capability, reasoning efforts, and pricing) as OpenCode
-models. Only `syn:*` ids are kept — concrete `hf:*` ids are ignored, because the
-point is to never pin a version.
+context limits, vision capability, reasoning-effort variants, and pricing) as
+OpenCode models. Only `syn:*` ids are kept — concrete `hf:*` ids are ignored,
+because the point is to never pin a version.
 
 ### 2. Registers and drives the OpenRouter Auto Router
 
@@ -72,9 +72,12 @@ session.execution.failed (carries the structured error + status)
 switchModel ──► openrouter/openrouter/auto ──► re-send the last user message
 ```
 
-Replay safety: re-sending a turn only happens when the failure is retryable
-(status/message match) and the session is still on Synthetic. A failed fallback
-therefore cannot loop, and the attempt budget (default 1) bounds it further.
+Replay safety: a turn is replayed only when the failure is retryable
+(status/message match), the session is still on Synthetic, and the failed turn
+produced no assistant output and ran no tools. A turn that already did work is
+never replayed, so side effects cannot be duplicated. Because a failed fallback
+leaves the session on OpenRouter, it cannot loop, and the attempt budget
+(default 1) bounds it further.
 
 > [!IMPORTANT]
 > **OpenRouter's "Prevent overrides" toggle must be OFF** at
@@ -302,6 +305,8 @@ settings.
 
 - Did the error match `failover.statuses` (default `[429]`) or
   `failover.messageMatches`? Outages (5xx) need to be added explicitly.
+- Did the failed turn already run tools or produce output? Such a turn is not
+  replayed, to avoid duplicating side effects.
 - Was the session still on Synthetic? A failure after failover does not fail
   over again.
 - Is `failover.enabled` still true?
@@ -309,9 +314,10 @@ settings.
 ## FAQ & caveats
 
 **Does failover replay my turn?**
-Yes, only after a retryable failure, and only when the session is still on
-Synthetic. Rate-limit failures happen before any tool runs, so there are no
-side effects to duplicate.
+Only after a retryable failure, only when the session is still on Synthetic, and
+only when the failed turn produced no assistant output and ran no tools. A turn
+that already did work is left as-is (no replay), so there are no side effects to
+duplicate.
 
 **Does this replace my account's Auto Router settings?**
 Only the `allowed_models` field, per request. Your saved `excluded_models` and

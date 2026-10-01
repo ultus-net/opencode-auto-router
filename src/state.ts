@@ -93,6 +93,15 @@ export async function warm(config: ResolvedConfig): Promise<void> {
   ])
 }
 
+/**
+ * The currently known Synthetic catalog without any network access: the disk
+ * cache loaded at import time, or the last successful refresh. Lets setup
+ * register models immediately and refresh in the background.
+ */
+export function currentSynthetic(): SyntheticCatalog | undefined {
+  return syntheticCache
+}
+
 /** Test seam: drop all memoized state. */
 export function resetStateForTests(): void {
   syntheticCache = undefined

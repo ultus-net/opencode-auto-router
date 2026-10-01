@@ -48,6 +48,12 @@ export function syntheticModelInfo(model: SyntheticModel): ModelDraft {
     capabilities: { tools: true, input: model.input, output: ["text"] },
     limit: { context: model.context, output: model.output },
     cost,
+    // Synthetic reports the reasoning efforts it accepts per alias; expose each
+    // as a selectable variant (e.g. `synthetic/syn:large:text#high`).
+    variants: model.efforts.map((effort) => ({
+      id: effort,
+      settings: { reasoningEffort: effort },
+    })),
     time: { released: model.released ?? Date.now() },
     status: "active",
     enabled: true,

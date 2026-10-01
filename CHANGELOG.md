@@ -16,15 +16,20 @@ Auto Router", which the old name no longer described.
   permanent `syn:*` category aliases (`syn:large:text`, `syn:small:text`,
   `syn:large:vision`, `syn:small:vision`) from
   `https://api.synthetic.new/openai/v1/models` and registers them as OpenCode
-  models with real context limits, vision capability, reasoning efforts, and
-  pricing. These aliases are absent from models.dev, so they are not selectable
-  without this.
+  models with real context limits, vision capability, reasoning-effort variants
+  (`synthetic/syn:large:text#high`), and pricing. These aliases are absent from
+  models.dev, so they are not selectable without this.
 - **Automatic cross-provider failover.** On a retryable Synthetic failure, the
   session switches to `openrouter/openrouter/auto` and the last user message is
   re-sent. Driven by the V2 event stream (`session.execution.failed`,
-  `session.retry.scheduled`) with a bounded `retry` hook, replay-safe gating
-  (retryable error + session still on Synthetic), and a configurable attempt
-  budget. See `src/failover.ts`.
+  `session.retry.scheduled`) with a bounded `retry` hook. A turn is replayed only
+  when the failure is retryable, the session is still on Synthetic, and the
+  failed turn produced no assistant output and ran no tools — so side effects
+  cannot be duplicated. The attempt budget is configurable (default 1). See
+  `src/failover.ts`.
+- **Non-blocking setup.** Models register from the on-disk catalog immediately;
+  fresh catalogs are fetched in the background and the providers reloaded when
+  they arrive, so a slow or offline network does not delay startup.
 - **TypeScript.** …the package is now authored in TypeScript, compiled to
   `dist/`.
 - Default model and the built-in `title` agent are set from `primaryModel` /
