@@ -12,6 +12,14 @@ OpenRouter aliases work" to "Synthetic-primary with automatic failover to the
 Auto Router", which the old name no longer described.
 
 ### Added
+- **Agent-level model routing and the `syn:auto` alias.** A plugin-registered
+  `synthetic/syn:auto` model remaps (via `modelID`) to the configured concrete
+  alias, and `ctx.agent.transform` points router-managed agents at the four
+  `syn:*` aliases by ordered id patterns (heavy → large text, research/light →
+  small text, vision → large vision). This is the supported V2 lever: request
+  hooks keep `model` readonly, so per-call routing is not expressible in a
+  plugin. Agents pinned to another provider are never modified. Configurable via
+  the `routing` option; see `src/routing.ts`.
 - **Synthetic as the primary provider.** The plugin discovers Synthetic's
   permanent `syn:*` category aliases (`syn:large:text`, `syn:small:text`,
   `syn:large:vision`, `syn:small:vision`) from

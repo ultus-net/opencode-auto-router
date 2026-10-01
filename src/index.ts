@@ -41,16 +41,19 @@ import {
 import { FailoverController, type FailoverHost, type ModelRef, type ReplayCandidate, type RetryEvent } from "./failover.js"
 import { log } from "./log.js"
 import {
+  buildAutoModel,
   openRouterAutoModelInfo,
   syntheticModelInfo,
   type ModelDraft,
 } from "./models.js"
+import { resolveAgentModel } from "./routing.js"
 import { currentSynthetic, resolveOpenRouterPool, warm } from "./state.js"
 import type { ResolvedConfig } from "./types.js"
 
 export { resolveConfig } from "./config.js"
 export { FailoverController, isRetryable } from "./failover.js"
 export type { ReplayCandidate, RetryEvent, RetryDecision } from "./failover.js"
+export { resolveAgentModel } from "./routing.js"
 export { resolvePool, aliasTargets } from "./openrouter.js"
 export { mapSyntheticModel } from "./synthetic.js"
 
@@ -82,7 +85,10 @@ async function registerModels(ctx: Context, config: ResolvedConfig): Promise<voi
     if (cached && cached.aliases.length > 0) {
       const models = select(cached.aliases)
       if (models.length > 0) {
-        merge(SYNTHETIC_PROVIDER_ID, models.map(syntheticModelInfo))
+        merge(SYNTHETIC_PROVIDER_ID, [
+          buildAutoModel(config.autoModel),
+          ...models.map(syntheticModelInfo),
+        ])
       }
     }
     merge(OPENROUTER_PROVIDER_ID, [openRouterAutoModelInfo()])
@@ -127,6 +133,33 @@ async function setDefaults(ctx: Context, config: ResolvedConfig): Promise<void> 
       })
     })
   }
+}
+
+/**
+ * Point router-managed agents at their routed Synthetic alias. This is the
+ * supported coarse-routing lever: OpenCode resolves an agent's model for every
+ * request it serves (including each tool continuation), whereas per-request
+ * model selection is not exposed to plugins. See `routing.ts`.
+ */
+async function applyAgentRouting(ctx: Context, config: ResolvedConfig): Promise<void> {
+  if (config.agentRoutes.length === 0 && !config.defaultAgentModel) return
+  await ctx.agent.transform((editor) => {
+    for (const agent of editor.list()) {
+      const id = String(agent.id)
+      const current = agent.model
+      const target = resolveAgentModel(
+        {
+          id,
+          model: current ? { providerID: String(current.providerID) } : undefined,
+        },
+        config,
+      )
+      if (!target) continue
+      editor.update(id, (draft) => {
+        draft.model = target as unknown as typeof draft.model
+      })
+    }
+  })
 }
 
 /** Inject the resolved `~…-latest` pool into every `openrouter/auto` request. */
@@ -217,6 +250,7 @@ export default Plugin.define({
     await registerModels(ctx, config)
     void refreshCatalogs(ctx, config)
     await setDefaults(ctx, config)
+    await applyAgentRouting(ctx, config)
     await registerAutoRouterInjection(ctx, config)
 
     const controller = new FailoverController(config, makeFailoverHost(ctx))

@@ -7,6 +7,9 @@ provider and fails over to **OpenRouter's Auto Router** when Synthetic rate-limi
   (`syn:large:text`, `syn:small:text`, `syn:large:vision`, `syn:small:vision`).
   Synthetic rotates the underlying model; the alias stays put, so nothing is
   pinned by hand.
+- **Routing (`syn:auto`):** a plugin-registered `syn:auto` alias, plus
+  agent-level routing that spreads work across the four aliases by role (heavy
+  roles → large, research/light roles → small, vision roles → large vision).
 - **Failover:** `openrouter/openrouter/auto`, driven by the same
   `~<lab>/<model>-latest` alias workflow this project started with. On a
   retryable Synthetic failure the plugin switches the session to the Auto
@@ -29,7 +32,29 @@ context limits, vision capability, reasoning-effort variants, and pricing) as
 OpenCode models. Only `syn:*` ids are kept — concrete `hf:*` ids are ignored,
 because the point is to never pin a version.
 
-### 2. Registers and drives the OpenRouter Auto Router
+### 2. Routes by role (`syn:auto` and agent routing)
+
+OpenCode V2 has no plugin hook that selects the model **per request** — every
+request hook carries `readonly model` — so an OpenRouter-style per-call router
+cannot be reproduced in a plugin. The supported lever is the **agent's** model
+(`ctx.agent.transform`), which OpenCode resolves for every request that agent
+serves, including each tool continuation.
+
+The plugin therefore routes **by role**:
+
+- It registers `synthetic/syn:auto`, a friendly alias that remaps (via the
+  model's `modelID`) to the configured concrete alias (`primaryModel`, default
+  `syn:large:text`). Selecting `syn:auto` sends a real Synthetic id upstream.
+- It points router-managed agents at aliases by pattern, in order:
+  vision roles → `syn:large:vision`; research/light roles → `syn:small:text`;
+  heavy coding roles → `syn:large:text`; anything unmatched → `syn:auto`'s
+  target.
+
+An agent that is explicitly pinned to another provider is **never** touched, and
+the title agent stays under `smallModel` ownership. This is coarse routing by
+agent, not live per-call complexity — the honest ceiling of what V2 exposes.
+
+### 3. Registers and drives the OpenRouter Auto Router
 
 The Auto Router accepts an `allowed_models` constraint, **but it only matches
 concrete catalog ids.** The `~…-latest` aliases resolve fine as a top-level
@@ -53,7 +78,7 @@ The plugin resolves each alias to its current concrete slug (`alias_target.slug`
 on startup and injects that list into every `openrouter/auto` request, so the
 Auto Router keeps working with the alias workflow.
 
-### 3. Fails over automatically
+### 4. Fails over automatically
 
 OpenCode does not expose cross-provider failover, and a plugin cannot redirect an
 in-flight request — on every session hook the `model` field is readonly. What a
@@ -127,8 +152,8 @@ Then connect the providers and restart OpenCode:
 ## Configuration
 
 Defaults work out of the box: Synthetic `syn:large:text` becomes the default
-model, `syn:small:text` serves lightweight/title generation, and failover to
-`openrouter/openrouter/auto` is on.
+model, `syn:small:text` serves lightweight/title generation, agents are routed by
+role, and failover to `openrouter/openrouter/auto` is on.
 
 ```jsonc
 {
@@ -156,6 +181,19 @@ model, `syn:small:text` serves lightweight/title generation, and failover to
         "forceDefaultModel": false,
         // Default true: set the built-in `title` agent to `smallModel`.
         "setSmallModel": true,
+
+        // Agent-level routing. OpenCode exposes no per-request model hook, so
+        // routing is by agent. `agentRoutes` is ordered; first match wins.
+        // Unmatched agents use `defaultAgentModel` (set to "" to leave them
+        // untouched). Agents pinned to another provider are never changed.
+        "routing": {
+          "agentRoutes": [
+            { "match": "vision|image|screenshot|ocr|multimodal", "model": "syn:large:vision" },
+            { "match": "explore|search|grep|read|title|summar|compact|quick|small|fast", "model": "syn:small:text" },
+            { "match": "build|code|coder|edit|implement|plan|review|debug|refactor|general|test", "model": "syn:large:text" }
+          ],
+          "defaultAgentModel": "syn:large:text"
+        },
 
         // OpenRouter Auto Router pool: any aliases; ones with no live target
         // are skipped. Defaults to the built-in frontier list.
@@ -193,8 +231,9 @@ model, `syn:small:text` serves lightweight/title generation, and failover to
 ```
 Setup
   ├─ discover Synthetic syn:* aliases  (api.synthetic.new/openai/v1/models)
-  ├─ register syn:* models + openrouter/auto
+  ├─ register syn:* models + syn:auto + openrouter/auto
   ├─ set default model / title model
+  ├─ route agents by role (ctx.agent.transform)
   └─ warm OpenRouter ~…-latest pool
 
 Request (Synthetic)
@@ -258,6 +297,7 @@ Source layout:
 | `src/state.ts` | Memoized catalogs with disk fallback |
 | `src/models.ts` | Pure catalog → OpenCode `Model.Info` mapping |
 | `src/failover.ts` | Retryable-error decision + cross-provider controller |
+| `src/routing.ts` | Ordered agent-id → alias routing + `syn:auto` resolution |
 | `src/config.ts` | Option normalization and defaults |
 | `scripts/smoke.mjs` | Fake-host smoke test for the built plugin (`npm run smoke`) |
 
@@ -266,6 +306,9 @@ Source layout:
 ```bash
 # Primary path
 opencode run --model synthetic/syn:large:text "reply with exactly: it works"
+
+# Router alias (remaps to primaryModel upstream)
+opencode run --model synthetic/syn:auto "reply with exactly: it works"
 
 # Failover target (Auto Router with the resolved pool)
 opencode run --model openrouter/openrouter/auto "reply with exactly: it works"

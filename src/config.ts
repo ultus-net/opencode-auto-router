@@ -7,6 +7,7 @@
  */
 
 import {
+  DEFAULT_AGENT_ROUTES,
   DEFAULT_ALIASES,
   DEFAULT_COST_TIER,
   DEFAULT_FAILOVER_MESSAGE_MATCHES,
@@ -15,7 +16,7 @@ import {
   SYNTHETIC_PRIMARY_MODEL_ID,
   SYNTHETIC_SMALL_MODEL_ID,
 } from "./constants.js"
-import type { PluginOptions, ResolvedConfig } from "./types.js"
+import type { AgentRoute, PluginOptions, ResolvedConfig } from "./types.js"
 
 function positiveInt(value: unknown, fallback: number, min = 0): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return fallback
@@ -28,8 +29,32 @@ function stringArray(value: unknown, fallback: readonly string[]): string[] {
   return items.length > 0 ? items : [...fallback]
 }
 
+/**
+ * A route is kept only when `match` compiles as a regex and `model` is a
+ * non-empty string. An invalid pattern is dropped rather than allowed to throw
+ * at transform time, where it would break every agent.
+ */
+function validRoutes(value: unknown): AgentRoute[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const routes: AgentRoute[] = []
+  for (const entry of value) {
+    if (typeof entry !== "object" || entry === null) continue
+    const match = (entry as { match?: unknown }).match
+    const model = (entry as { model?: unknown }).model
+    if (typeof match !== "string" || typeof model !== "string" || !model) continue
+    try {
+      new RegExp(match)
+    } catch {
+      continue
+    }
+    routes.push({ match, model })
+  }
+  return routes
+}
+
 export function resolveConfig(options: PluginOptions = {}): ResolvedConfig {
   const failover = options.failover ?? {}
+  const routing = options.routing ?? {}
   return {
     syntheticModels: Array.isArray(options.syntheticModels)
       ? options.syntheticModels.filter((v) => typeof v === "string" && v.startsWith("syn:"))
@@ -42,6 +67,15 @@ export function resolveConfig(options: PluginOptions = {}): ResolvedConfig {
       typeof options.smallModel === "string" && options.smallModel
         ? options.smallModel
         : SYNTHETIC_SMALL_MODEL_ID,
+    autoModel:
+      typeof options.primaryModel === "string" && options.primaryModel
+        ? options.primaryModel
+        : SYNTHETIC_PRIMARY_MODEL_ID,
+    agentRoutes: validRoutes(routing.agentRoutes) ?? [...DEFAULT_AGENT_ROUTES],
+    defaultAgentModel:
+      typeof routing.defaultAgentModel === "string"
+        ? routing.defaultAgentModel
+        : SYNTHETIC_PRIMARY_MODEL_ID,
     aliases: stringArray(options.aliases, DEFAULT_ALIASES),
     costTier:
       typeof options.costTier === "string" && options.costTier

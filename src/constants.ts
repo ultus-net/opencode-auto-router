@@ -21,6 +21,27 @@ export const SYNTHETIC_MODELS_URL = "https://api.synthetic.new/openai/v1/models"
 export const SYNTHETIC_PRIMARY_MODEL_ID = "syn:large:text"
 export const SYNTHETIC_SMALL_MODEL_ID = "syn:small:text"
 
+/**
+ * Friendly plugin-registered alias. Synthetic's catalog has no `syn:auto`
+ * category, so the plugin registers this id itself and remaps it to
+ * `SYNTHETIC_PRIMARY_MODEL_ID` via the model's `modelID`: requests for
+ * `synthetic/syn:auto` send a real Synthetic id, while the picker shows the
+ * router's default. Chosen as the default for every unconfigured agent.
+ */
+export const SYNTHETIC_AUTO_MODEL_ID = "syn:auto"
+
+/**
+ * Default role -> alias routing. Ordered; the first pattern that matches an
+ * agent id wins. Deliberately small and legible: heavy roles get the large
+ * alias, light/research roles get the small alias, vision roles get the large
+ * vision alias. Unmatched agents fall to `SYNTHETIC_AUTO_MODEL_ID`.
+ */
+export const DEFAULT_AGENT_ROUTES: readonly { match: string; model: string }[] = [
+  { match: "vision|image|screenshot|ocr|multimodal", model: "syn:large:vision" },
+  { match: "explore|search|grep|read|title|summar|compact|quick|small|fast", model: "syn:small:text" },
+  { match: "build|code|coder|edit|implement|plan|review|debug|refactor|general|test", model: "syn:large:text" },
+]
+
 export const OPENROUTER_PROVIDER_ID = "openrouter"
 export const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
 

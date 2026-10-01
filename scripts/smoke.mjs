@@ -65,6 +65,16 @@ function makeHost() {
     ["openrouter", { provider: {}, models: new Map() }],
   ])
 
+  // Agents routed by the plugin. `pinned` is explicitly on another provider
+  // and must survive untouched.
+  const agents = new Map([
+    ["title", { id: "title", model: undefined }],
+    ["build", { id: "build", model: undefined }],
+    ["explore", { id: "explore", model: undefined }],
+    ["image-analyzer", { id: "image-analyzer", model: undefined }],
+    ["pinned", { id: "pinned", model: { providerID: "anthropic", id: "claude" } }],
+  ])
+
   const eventQueue = []
   const eventWaiters = []
   let sessionModel = { providerID: "synthetic", id: "syn:large:text" }
@@ -123,7 +133,6 @@ function makeHost() {
 
     agent: {
       async transform(cb) {
-        const agents = new Map([["title", { id: "title", model: undefined }]])
         cb({
           list: () => [...agents.values()],
           get: (id) => agents.get(id),
@@ -132,6 +141,7 @@ function makeHost() {
           remove: () => {},
         })
         ctx.__titleModel = agents.get("title")?.model
+        ctx.__agents = agents
       },
     },
 
@@ -176,7 +186,16 @@ await plugin.setup(ctx)
 await new Promise((r) => setTimeout(r, 50))
 
 const synModels = [...providerRecords.get("synthetic").models.keys()].sort()
-assert.deepEqual(synModels, ["syn:large:text", "syn:small:text"], "synthetic models: " + synModels)
+assert.deepEqual(
+  synModels,
+  ["syn:auto", "syn:large:text", "syn:small:text"],
+  "synthetic models: " + synModels,
+)
+
+// The router alias is selectable as syn:auto but sends a real Synthetic id.
+const auto = providerRecords.get("synthetic").models.get("syn:auto")
+assert.equal(auto.modelID, "syn:large:text")
+assert.equal(auto.name, "syn:auto")
 
 const large = providerRecords.get("synthetic").models.get("syn:large:text")
 assert.deepEqual(large.variants.map((v) => v.id), ["none", "low", "high"])
@@ -189,6 +208,13 @@ assert.ok(providerRecords.get("openrouter").models.has("openrouter/auto"))
 
 assert.deepEqual(ctx.__default, { providerID: "synthetic", modelID: "syn:large:text" })
 assert.deepEqual(ctx.__titleModel, { providerID: "synthetic", id: "syn:small:text" })
+
+// Agent-level routing (the supported coarse-routing lever).
+assert.deepEqual(ctx.__agents.get("build").model, { providerID: "synthetic", id: "syn:large:text" })
+assert.deepEqual(ctx.__agents.get("explore").model, { providerID: "synthetic", id: "syn:small:text" })
+assert.deepEqual(ctx.__agents.get("image-analyzer").model, { providerID: "synthetic", id: "syn:large:vision" })
+// An explicit non-Synthetic pin is never clobbered.
+assert.deepEqual(ctx.__agents.get("pinned").model, { providerID: "anthropic", id: "claude" })
 
 for (const kind of ["context", "compaction", "generate", "title"]) {
   assert.ok(calls.hooks.some((h) => h.name === kind && h.options?.providerID === "openrouter"), "hook " + kind)
@@ -213,6 +239,9 @@ assert.deepEqual(unsafe.calls.switchModel, [], "must not replay a turn that ran 
 
 console.log("smoke: OK")
 console.log("  synthetic models:", synModels.join(", "))
+console.log("  agent routing: build ->", ctx.__agents.get("build").model?.id,
+  "| explore ->", ctx.__agents.get("explore").model?.id,
+  "| image-analyzer ->", ctx.__agents.get("image-analyzer").model?.id)
 console.log("  variants(syn:large:text):", large.variants.map((v) => v.id).join(", "))
 console.log("  openrouter models:", [...providerRecords.get("openrouter").models.keys()].join(", "))
 console.log("  default:", ctx.__default.providerID + "/" + ctx.__default.modelID)

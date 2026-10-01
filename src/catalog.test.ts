@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 
 import { mapSyntheticModel } from "./synthetic.js"
 import { normalizeSyntheticModel } from "./cache.js"
-import { syntheticModelInfo } from "./models.js"
+import { buildAutoModel, syntheticModelInfo } from "./models.js"
 import { aliasTargets, resolvePool } from "./openrouter.js"
 
 test("mapSyntheticModel keeps syn:* aliases and drops concrete ids", () => {
@@ -98,6 +98,19 @@ test("syntheticModelInfo always emits a boolean capabilities.tools", () => {
   })
   assert.equal(typeof info.capabilities.tools, "boolean")
   assert.equal(info.capabilities.tools, true)
+})
+
+test("buildAutoModel registers syn:auto and remaps its upstream id", () => {
+  const auto = buildAutoModel("syn:large:text")
+  // Selectable id is the friendly alias; the id sent upstream is the concrete one.
+  assert.equal(auto.id, "syn:auto")
+  assert.equal(auto.modelID, "syn:large:text")
+  assert.equal(auto.providerID, "synthetic")
+  assert.equal(auto.name, "syn:auto")
+  // Capabilities must satisfy Model.Capabilities (tools is a strict boolean).
+  assert.equal(typeof auto.capabilities.tools, "boolean")
+  assert.equal(auto.capabilities.tools, true)
+  assert.equal(auto.enabled, true)
 })
 
 test("aliasTargets maps only ~aliases that resolve", () => {
