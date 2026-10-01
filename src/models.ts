@@ -43,7 +43,11 @@ export function syntheticModelInfo(model: SyntheticModel): ModelDraft {
 
   return {
     ...base(SYNTHETIC_PROVIDER_ID, model.id),
-    name: model.name,
+    // Keep the alias id visible and searchable: Synthetic's display_name is the
+    // same as the concrete model it routes to, so using it verbatim would make
+    // the alias indistinguishable from (and deduped against) its target in the
+    // model picker. e.g. "syn:large:text (DeepSeek V4.1 Flash)".
+    name: `${model.id} (${model.name})`,
     family: model.id,
     capabilities: { tools: true, input: model.input, output: ["text"] },
     limit: { context: model.context, output: model.output },
