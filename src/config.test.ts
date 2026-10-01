@@ -65,6 +65,11 @@ test("malformed values fall back instead of throwing", () => {
   assert.equal(c.primaryModel, SYNTHETIC_PRIMARY_MODEL_ID)
 })
 
+test("a non-syn smallModel falls back to the built-in", () => {
+  const c = resolveConfig({ smallModel: "claude" as unknown as string })
+  assert.equal(c.smallModel, SYNTHETIC_SMALL_MODEL_ID)
+})
+
 test("invalid routing entries are dropped, not fatal", () => {
   const c = resolveConfig({
     routing: {
