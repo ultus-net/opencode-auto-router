@@ -151,9 +151,10 @@ Then connect the providers and restart OpenCode:
 
 ## Configuration
 
-Defaults work out of the box: Synthetic `syn:large:text` becomes the default
-model, `syn:small:text` serves lightweight/title generation, agents are routed by
-role, and failover to `openrouter/openrouter/auto` is on.
+Defaults work out of the box: `synthetic/syn:auto` becomes the default model (it
+remaps to `primaryModel`, default `syn:large:text`), `syn:small:text` serves
+lightweight/title generation, agents are routed by role, and failover to
+`openrouter/openrouter/auto` is on.
 
 ```jsonc
 {
@@ -170,8 +171,7 @@ role, and failover to `openrouter/openrouter/auto` is on.
           "syn:small:vision"
         ],
 
-        // Primary / small Synthetic models (used only when setDefaultModel /
-        // setSmallModel are on). Defaults shown.
+        // The default model is syn:auto (remaps to primaryModel upstream).
         "primaryModel": "syn:large:text",
         "smallModel": "syn:small:text",
 

@@ -208,7 +208,7 @@ assert.equal(large.name, "syn:large:text")
 
 assert.ok(providerRecords.get("openrouter").models.has("openrouter/auto"))
 
-assert.deepEqual(ctx.__default, { providerID: "synthetic", modelID: "syn:large:text" })
+assert.deepEqual(ctx.__default, { providerID: "synthetic", modelID: "syn:auto" })
 assert.deepEqual(ctx.__titleModel, { providerID: "synthetic", id: "syn:small:text" })
 
 // Agent-level routing (the supported coarse-routing lever).

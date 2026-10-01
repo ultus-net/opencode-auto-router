@@ -36,6 +36,7 @@ import {
   OPENROUTER_AUTO_MODEL_ID,
   OPENROUTER_PROVIDER_ID,
   PLUGIN_ID,
+  SYNTHETIC_AUTO_MODEL_ID,
   SYNTHETIC_PROVIDER_ID,
 } from "./constants.js"
 import { FailoverController, type FailoverHost, type ModelRef, type ReplayCandidate, type RetryEvent } from "./failover.js"
@@ -109,9 +110,12 @@ async function refreshCatalogs(ctx: Context, config: ResolvedConfig): Promise<vo
 
 /** Set the default model and the small/title model. */
 async function setDefaults(ctx: Context, config: ResolvedConfig): Promise<void> {
+  // The default model is the router alias `syn:auto`, which remaps to
+  // `primaryModel` upstream. Selecting the alias (not the concrete id) keeps the
+  // picker honest and lets one option retarget every unrouted request.
   const primary: ModelRef = {
     providerID: SYNTHETIC_PROVIDER_ID,
-    id: config.primaryModel,
+    id: SYNTHETIC_AUTO_MODEL_ID,
   }
 
   if (config.setDefaultModel) {

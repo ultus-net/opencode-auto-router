@@ -41,8 +41,9 @@ Auto Router", which the old name no longer described.
   they arrive, so a slow or offline network does not delay startup.
 - **TypeScript.** …the package is now authored in TypeScript, compiled to
   `dist/`.
-- Default model and the built-in `title` agent are set from `primaryModel` /
-  `smallModel` when unset (`setDefaultModel` / `setSmallModel`).
+- Default model is `synthetic/syn:auto` (remaps to `primaryModel`), and the
+  built-in `title` agent is set from `smallModel`, when unset (`setDefaultModel`
+  / `setSmallModel`).
 - Unit tests for config normalization, catalog mapping, alias resolution, and
   the failover controller (`npm test`, `node:test`).
 - `npm run smoke`: a hermetic fake-host test that drives the built plugin's
