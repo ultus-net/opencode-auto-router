@@ -43,7 +43,7 @@ pre-create hazard bites:
 
 - `packages/core/src/agent.ts:56-61` - `update` for an absent id does
   `draft.agents.get(id) ?? Info.empty(id)` and inserts it.
-- `packages/core/src/config/plugin/agent.ts:~88-90` - `const exists =
+- `packages/core/src/config/plugin/agent.ts:88-90` - `const exists =
   draft.get(agentID) !== undefined; ... if (!exists) agent.permissions.push(...)`.
 
 So if routing calls `update` for an id that is not yet in **that pass's** draft,
@@ -61,8 +61,9 @@ after `config-agent` in the same pass rather than to import ids across passes.
   external plugin's own `plugin.added` does fire after `config-agent`'s. This
   does **not** help: events publish at plugin-add time, outside any `materialize`
   pass, whereas `config-agent`'s transform (registered at
-  `config/plugin/agent.ts:52` in the pinned revision) does its
-  markdown discovery later, during materialize (`state.ts:79-81`). A
+  `packages/core/src/config/plugin/agent.ts:52` in the pinned revision) does its
+  markdown discovery later, during materialize
+  (`packages/core/src/state.ts:79-81`). A
   `plugin.added` callback therefore runs before the discovery it would need.
 - `agent.updated` has **no** publisher in `packages/core/src`,
   `packages/server/src`, `packages/protocol/src`, or `packages/schema/src` at the
@@ -83,7 +84,7 @@ not: `opencode-src/packages/core/src/plugin/promise.ts:47-49` builds the agent
 context with only `transform` and `reload`. Even where `list()` is callable, it
 returns the **committed** state (`packages/server/src/handlers/agent.ts:8-11` ->
 `AgentV2.all()`), while a `materialize` pass only `commit`s after all transforms
-have run (`state.ts:79-83`). So a poll that executes *inside* a transform
+have run (`packages/core/src/state.ts:79-83`). So a poll that executes *inside* a transform
 registered before `config-agent` cannot observe that pass's additions - the
 draft is not committed yet. Polling only yields an ordering-independent id set if
 it runs **after** the pass (which is where the `setTimeout` fix already runs).
@@ -114,14 +115,18 @@ the timer uses - NOT from inside an early-registered transform). Rationale:
 
 Caveats (load-bearing):
 
-- `list()` returns **committed** state (`server/src/handlers/agent.ts:8-11` ->
+- `list()` returns **committed** state (`packages/server/src/handlers/agent.ts:8-11` ->
   `AgentV2.all()`), and a materialize pass commits only after all transforms
-  (`state.ts:79-83`). A poll *inside* an early transform would see nothing; the
+  (`packages/core/src/state.ts:79-83`). A poll *inside* an early transform would see nothing; the
   poll must run after a pass, exactly where the timer already runs. So the poll
   changes *when* the late re-register is scheduled, not the fundamental
   register-late requirement.
-- It relies on `ctx.agent.list()` being present on the peer `@opencode/plugin`
-  (present in 2.0.21; `peerDependencies` allows `>=2.0.0`), and still needs a
-  timeout bound and a fallback to the fixed delay.
+- It relies on `ctx.agent.list()` being present. The published
+  `@opencode-ai/plugin` type surface declares `list()` on the agent domain, but
+  the host's own promise bridge at the pinned revision does **not** construct it
+  (`opencode-src/packages/core/src/plugin/promise.ts:47-49` builds `agent` with
+  only `transform` and `reload`), so on the pinned host `ctx.agent.list()` is
+  `undefined` and the option is not viable without a host change to expose it.
+  It also needs a timeout bound and a fallback to the fixed delay.
 
 That is why it is left as a documented option rather than shipped.
