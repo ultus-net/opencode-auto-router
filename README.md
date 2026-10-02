@@ -47,8 +47,10 @@ The plugin therefore routes **by role**:
   model's `modelID`) to the configured concrete alias (`primaryModel`, default
   `syn:large:text`). Selecting `syn:auto` sends a real Synthetic id upstream.
 - It points router-managed agents at aliases by pattern, in order:
-  vision roles → `syn:large:vision`; research/light roles → `syn:small:text`;
-  heavy coding roles → `syn:large:text`; anything unmatched → `syn:auto`.
+  vision roles → `syn:large:vision`; the `executor-strong` escalation twin →
+  `syn:large:text`; research/light roles, including the cheap `executor` →
+  `syn:small:text`; other heavy coding roles → `syn:large:text`; anything
+  unmatched → `syn:auto`.
 
 An agent that is explicitly pinned to another provider is **never** touched, and
 the title agent stays under `smallModel` ownership. This is coarse routing by
@@ -189,8 +191,9 @@ lightweight/title generation, agents are routed by role, and failover to
         "routing": {
           "agentRoutes": [
             { "match": "vision|image|screenshot|ocr|multimodal", "model": "syn:large:vision" },
-            { "match": "explore|search|grep|read|title|summar|compact|quick|small|fast", "model": "syn:small:text" },
-            { "match": "build|code|coder|edit|implement|plan|review|debug|refactor|general|test", "model": "syn:large:text" }
+            { "match": "executor-strong", "model": "syn:large:text" },
+            { "match": "explore|search|grep|read|title|summar|compact|quick|small|fast|executor|retro|rsi", "model": "syn:small:text" },
+            { "match": "build|code|coder|edit|implement|plan|review|debug|refactor|general|test|decompose|architect|judge", "model": "syn:large:text" }
           ],
           "defaultAgentModel": "syn:auto"
         },

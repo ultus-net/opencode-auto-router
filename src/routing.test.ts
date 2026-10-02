@@ -15,6 +15,10 @@ test("routes known roles by pattern and defaults the rest to syn:auto", () => {
   assert.equal(resolveAgentModel({ id: "explore" }, cfg)?.id, "syn:small:text")
   // Vision roles -> large vision.
   assert.equal(resolveAgentModel({ id: "screenshot-analyzer" }, cfg)?.id, "syn:large:vision")
+  // Escalation twin: routed strong even though "executor" is a substring
+  // of the cheap line's pattern, so its route must precede that line.
+  assert.equal(resolveAgentModel({ id: "executor-strong" }, cfg)?.id, "syn:large:text")
+  assert.equal(resolveAgentModel({ id: "executor" }, cfg)?.id, "syn:small:text")
   // No pattern -> the router alias (which remaps to primary upstream).
   assert.equal(resolveAgentModel({ id: "totally-unknown" }, cfg)?.id, SYNTHETIC_AUTO_MODEL_ID)
   // Every routed target lives on the Synthetic provider.
