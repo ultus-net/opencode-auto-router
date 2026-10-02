@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 
 import { resolveConfig } from "./config.js"
 import { routeAgents, type RoutingEditor } from "./routing.js"
-import { reassertTransform, type TransformRegistration } from "./index.js"
+import { makeTransformSlot, reassertTransform, type TransformRegistration } from "./index.js"
 
 const cfg = resolveConfig()
 
@@ -50,6 +50,28 @@ test("reassertTransform still disposes the early transform when re-registration 
   assert.deepEqual(registry.transforms, ["config-agent"], "no mis-ordered transform is left live")
 })
 
+test("reassertTransform tolerates a handle without dispose", async () => {
+  const early = {} as TransformRegistration
+  const late = { dispose: async () => {} }
+  await assert.doesNotReject(reassertTransform(async () => late, early))
+})
+
+test("transform slot retires the previous registration on re-init (no accumulation)", async () => {
+  const registry = makeRegistry()
+  const slot = makeTransformSlot()
+  slot.set(registry.register("router-first"))
+  assert.deepEqual(registry.transforms, ["router-first"])
+
+  await slot.retire()
+  slot.set(registry.register("router-second"))
+  assert.deepEqual(registry.transforms, ["router-second"], "first registration was retired")
+
+  // A missing dispose must not throw or strand the slot.
+  slot.set({} as TransformRegistration)
+  await assert.doesNotReject(slot.retire())
+  assert.equal(slot.active, undefined)
+})
+
 test("routeAgents is idempotent: a double-registration window does not change the result", () => {
   const agents = new Map([
     ["reviewer", { id: "reviewer" } as { id: string; model?: { providerID?: string; id?: string } }],
@@ -64,6 +86,7 @@ test("routeAgents is idempotent: a double-registration window does not change th
     },
   }
   const first = routeAgents(editor, cfg)
+  assert.ok(first.length > 0, "resolveConfig must yield routes for this test to be meaningful")
   const afterFirst = JSON.stringify([...agents.values()])
   const second = routeAgents(editor, cfg)
   assert.deepEqual(second, first)

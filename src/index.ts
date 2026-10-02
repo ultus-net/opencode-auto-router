@@ -156,8 +156,15 @@ async function setDefaults(ctx: Context, config: ResolvedConfig): Promise<void> 
  * `config-agent`, so every later materialize routes the full agent list. The
  * early registration is disposed so only the late one remains.
  */
+/** Holds the one surviving routing transform so a reload can retire it. */
+const routingSlot = makeTransformSlot()
+
 async function applyAgentRouting(ctx: Context, config: ResolvedConfig): Promise<void> {
   if (config.agentRoutes.length === 0 && !config.defaultAgentModel) return
+
+  // A reload can re-run setup in the same process; retire the previous live
+  // routing transform so re-assertions do not accumulate one per reload.
+  await routingSlot.retire()
 
   const route: Parameters<Context["agent"]["transform"]>[0] = (editor) => {
     const routed = routeAgents(editor, config)
@@ -169,8 +176,37 @@ async function applyAgentRouting(ctx: Context, config: ResolvedConfig): Promise<
   // Defer past the host's internal plugin boot so `config-agent` has registered
   // its transform first; the re-registration then appends after it.
   scheduleReassert(async () => {
-    await reassertTransform(() => ctx.agent.transform(route), early)
+    routingSlot.set(await reassertTransform(() => ctx.agent.transform(route), early))
   })
+}
+
+/** A single-slot holder with an idempotent, safe dispose. */
+export interface TransformSlot {
+  readonly active: TransformRegistration | undefined
+  set: (next: TransformRegistration) => void
+  retire: () => Promise<void>
+}
+
+/**
+ * Track at most one live transform registration. `retire` clears the slot before
+ * awaiting `dispose`, so a failing or missing `dispose` cannot leave the slot
+ * pointing at a stale handle, and a re-init does not accumulate transforms.
+ */
+export function makeTransformSlot(): TransformSlot {
+  let active: TransformRegistration | undefined
+  return {
+    get active() {
+      return active
+    },
+    set(next) {
+      active = next
+    },
+    async retire() {
+      const current = active
+      active = undefined
+      await current?.dispose?.()
+    },
+  }
 }
 
 /** The handle the host returns from `agent.transform` / `model.transform`. */
@@ -191,7 +227,9 @@ export async function reassertTransform(
   try {
     return await reregister()
   } finally {
-    await early.dispose()
+    // The host (and its mocks) may hand back a handle without `dispose`; never
+    // let that turn into an uncaught rejection inside the deferred task.
+    await early?.dispose?.()
   }
 }
 
