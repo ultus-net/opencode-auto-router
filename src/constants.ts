@@ -39,6 +39,9 @@ export const SYNTHETIC_AUTO_MODEL_ID = "syn:auto"
  */
 export const DEFAULT_AGENT_ROUTES: readonly { match: string; model: string }[] = [
   { match: "vision|image|screenshot|ocr|multimodal", model: "syn:large:vision" },
+  // Escalation twin: an explicit strong executor. Must precede the cheap
+  // line below, whose "executor" substring would otherwise win first-match.
+  { match: "executor-strong", model: "syn:large:text" },
   { match: "explore|search|grep|read|title|summar|compact|quick|small|fast|executor|retro|rsi", model: "syn:small:text" },
   { match: "build|code|coder|edit|implement|plan|review|debug|refactor|general|test|decompose|architect|judge", model: "syn:large:text" },
 ]
