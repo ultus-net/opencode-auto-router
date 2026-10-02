@@ -169,9 +169,30 @@ async function applyAgentRouting(ctx: Context, config: ResolvedConfig): Promise<
   // Defer past the host's internal plugin boot so `config-agent` has registered
   // its transform first; the re-registration then appends after it.
   scheduleReassert(async () => {
-    await ctx.agent.transform(route)
-    await early.dispose()
+    await reassertTransform(() => ctx.agent.transform(route), early)
   })
+}
+
+/** The handle the host returns from `agent.transform` / `model.transform`. */
+export interface TransformRegistration {
+  dispose: () => Promise<void>
+}
+
+/**
+ * Append a transform after an earlier registration, then retire the earlier one
+ * so the surviving callback sorts last. The earlier registration is disposed in
+ * a `finally`, so a failed re-registration does not leave the mis-ordered
+ * transform live. Returns the fresh handle.
+ */
+export async function reassertTransform(
+  reregister: () => Promise<TransformRegistration>,
+  early: TransformRegistration,
+): Promise<TransformRegistration> {
+  try {
+    return await reregister()
+  } finally {
+    await early.dispose()
+  }
 }
 
 /**
