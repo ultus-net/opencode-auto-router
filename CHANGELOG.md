@@ -17,7 +17,8 @@ Auto Router", which the old name no longer described.
   alias, and `ctx.agent.transform` points router-managed agents at `syn:*`
   aliases by ordered id patterns (heavy → `syn:large:text`, research/light →
   `syn:small:text`, vision → `syn:large:vision`; unmatched agents →
-  `syn:auto`). This is the supported V2 lever: request
+  `syn:auto`); an `executor-strong` escalation twin is matched ahead of the
+  cheap `executor` line. This is the supported V2 lever: request
   hooks keep `model` readonly, so per-call routing is not expressible in a
   plugin. Agents pinned to another provider are never modified. Configurable via
   the `routing` option; see `src/routing.ts`.
