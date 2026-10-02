@@ -47,7 +47,7 @@ import {
   syntheticModelInfo,
   type ModelDraft,
 } from "./models.js"
-import { resolveAgentModel } from "./routing.js"
+import { routeAgents } from "./routing.js"
 import { currentSynthetic, resolveOpenRouterPool, warm } from "./state.js"
 import type { ResolvedConfig } from "./types.js"
 
@@ -145,28 +145,43 @@ async function setDefaults(ctx: Context, config: ResolvedConfig): Promise<void> 
  * supported coarse-routing lever: OpenCode resolves an agent's model for every
  * request it serves (including each tool continuation), whereas per-request
  * model selection is not exposed to plugins. See `routing.ts`.
+ *
+ * Ordering matters. AgentV2 replays every registered transform, in registration
+ * order, from an empty base on each materialize (`core/src/state.ts`), and the
+ * config-owned `config-agent` transform is what discovers the markdown agents
+ * (`core/src/config/plugin/agent.ts`). When this plugin registers during boot
+ * *before* `config-agent`, the routing callback runs against a draft that holds
+ * only built-ins, so custom agents are never repointed. Registering once more
+ * after the boot batch settles appends a transform that sorts after
+ * `config-agent`, so every later materialize routes the full agent list. The
+ * early registration is disposed so only the late one remains.
  */
 async function applyAgentRouting(ctx: Context, config: ResolvedConfig): Promise<void> {
   if (config.agentRoutes.length === 0 && !config.defaultAgentModel) return
-  await ctx.agent.transform((editor) => {
-    for (const agent of editor.list()) {
-      const id = String(agent.id)
-      const provider = agent.model?.providerID
-      const target = resolveAgentModel(
-        {
-          id,
-          // A model without a providerID counts as unset; only stringify a real
-          // id, so the caller never fabricates "undefined"/"null".
-          model: provider == null ? undefined : { providerID: String(provider) },
-        },
-        config,
-      )
-      if (!target) continue
-      editor.update(id, (draft) => {
-        draft.model = target as unknown as typeof draft.model
-      })
-    }
+
+  const route: Parameters<Context["agent"]["transform"]>[0] = (editor) => {
+    const routed = routeAgents(editor, config)
+    if (routed.length > 0) log.debug("routed agents", routed.join(", "))
+  }
+
+  const early = await ctx.agent.transform(route)
+
+  // Defer past the host's internal plugin boot so `config-agent` has registered
+  // its transform first; the re-registration then appends after it.
+  scheduleReassert(async () => {
+    await ctx.agent.transform(route)
+    await early.dispose()
   })
+}
+
+/**
+ * Run `task` after the current macrotask. `setTimeout` keeps the work off the
+ * boot batch and survives either a browser or Node runtime.
+ */
+function scheduleReassert(task: () => Promise<void>): void {
+  setTimeout(() => {
+    void task().catch((error) => log.warn("deferred agent routing failed", error))
+  }, 0)
 }
 
 /** Inject the resolved `~…-latest` pool into every `openrouter/auto` request. */
