@@ -66,6 +66,55 @@ export function resolveAgentModel(
 }
 
 /**
+ * The draft-mutation surface this module needs. Structurally satisfied by the
+ * host's `AgentEditor`, but declared minimally so the replay contract can be
+ * unit-tested without the host. Ids arrive as the host's branded string, so the
+ * editor-facing shape admits anything with a `toString`.
+ */
+export interface RoutingEditor {
+  list(): readonly {
+    id: string | { toString(): string }
+    model?: { providerID?: unknown } | undefined
+  }[]
+  update(id: string, update: (agent: { model?: unknown }) => void): void
+}
+
+/**
+ * Apply `config.agentRoutes` to every routable agent currently in `editor`,
+ * returning the ids that were repointed.
+ *
+ * This is the body of the host transform. It only touches agents that are
+ * already in the draft: it never calls `editor.update` for an id it has not
+ * listed, because on the host an update for an absent id *creates* a bare agent
+ * and the config-owned transform then sees `exists === true` and skips that
+ * agent's configured permissions (`core/src/config/plugin/agent.ts:88`). The
+ * plugin therefore depends on being ordered after the config transform, which
+ * `index.ts` guarantees by re-registering once the boot batch settles.
+ */
+export function routeAgents(editor: RoutingEditor, config: ResolvedConfig): string[] {
+  const routed: string[] = []
+  for (const agent of editor.list()) {
+    const id = String(agent.id)
+    const provider = agent.model?.providerID
+    const target = resolveAgentModel(
+      {
+        id,
+        // A model without a providerID counts as unset; only stringify a real
+        // id, so the caller never fabricates "undefined"/"null".
+        model: provider == null ? undefined : { providerID: String(provider) },
+      },
+      config,
+    )
+    if (!target) continue
+    editor.update(id, (draft) => {
+      draft.model = target
+    })
+    routed.push(id)
+  }
+  return routed
+}
+
+/**
  * Case-insensitive regex test that never throws on a bad pattern. Patterns are
  * validated by `resolveConfig`; the guard is for direct callers.
  */

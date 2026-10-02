@@ -144,6 +144,7 @@ function makeHost() {
         })
         ctx.__titleModel = agents.get("title")?.model
         ctx.__agents = agents
+        return { dispose: async () => {} }
       },
     },
 

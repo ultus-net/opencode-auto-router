@@ -47,7 +47,7 @@ import {
   syntheticModelInfo,
   type ModelDraft,
 } from "./models.js"
-import { resolveAgentModel } from "./routing.js"
+import { routeAgents } from "./routing.js"
 import { currentSynthetic, resolveOpenRouterPool, warm } from "./state.js"
 import type { ResolvedConfig } from "./types.js"
 
@@ -145,28 +145,102 @@ async function setDefaults(ctx: Context, config: ResolvedConfig): Promise<void> 
  * supported coarse-routing lever: OpenCode resolves an agent's model for every
  * request it serves (including each tool continuation), whereas per-request
  * model selection is not exposed to plugins. See `routing.ts`.
+ *
+ * Ordering matters. AgentV2 replays every registered transform, in registration
+ * order, from an empty base on each materialize (`core/src/state.ts`), and the
+ * config-owned `config-agent` transform is what discovers the markdown agents
+ * (`core/src/config/plugin/agent.ts`). When this plugin registers during boot
+ * *before* `config-agent`, the routing callback runs against a draft that holds
+ * only built-ins, so custom agents are never repointed. Registering once more
+ * after the boot batch settles appends a transform that sorts after
+ * `config-agent`, so every later materialize routes the full agent list. The
+ * early registration is disposed so only the late one remains.
  */
+/** Holds the one surviving routing transform so a reload can retire it. */
+const routingSlot = makeTransformSlot()
+
 async function applyAgentRouting(ctx: Context, config: ResolvedConfig): Promise<void> {
   if (config.agentRoutes.length === 0 && !config.defaultAgentModel) return
-  await ctx.agent.transform((editor) => {
-    for (const agent of editor.list()) {
-      const id = String(agent.id)
-      const provider = agent.model?.providerID
-      const target = resolveAgentModel(
-        {
-          id,
-          // A model without a providerID counts as unset; only stringify a real
-          // id, so the caller never fabricates "undefined"/"null".
-          model: provider == null ? undefined : { providerID: String(provider) },
-        },
-        config,
-      )
-      if (!target) continue
-      editor.update(id, (draft) => {
-        draft.model = target as unknown as typeof draft.model
-      })
-    }
+
+  // A reload can re-run setup in the same process; retire the previous live
+  // routing transform so re-assertions do not accumulate one per reload.
+  await routingSlot.retire()
+
+  const route: Parameters<Context["agent"]["transform"]>[0] = (editor) => {
+    const routed = routeAgents(editor, config)
+    if (routed.length > 0) log.debug("routed agents", routed.join(", "))
+  }
+
+  const early = await ctx.agent.transform(route)
+
+  // Defer past the host's internal plugin boot so `config-agent` has registered
+  // its transform first; the re-registration then appends after it.
+  scheduleReassert(async () => {
+    routingSlot.set(await reassertTransform(() => ctx.agent.transform(route), early))
   })
+}
+
+/** A single-slot holder with an idempotent, safe dispose. */
+export interface TransformSlot {
+  readonly active: TransformRegistration | undefined
+  set: (next: TransformRegistration) => void
+  retire: () => Promise<void>
+}
+
+/**
+ * Track at most one live transform registration. `retire` clears the slot before
+ * awaiting `dispose`, so a failing or missing `dispose` cannot leave the slot
+ * pointing at a stale handle, and a re-init does not accumulate transforms.
+ */
+export function makeTransformSlot(): TransformSlot {
+  let active: TransformRegistration | undefined
+  return {
+    get active() {
+      return active
+    },
+    set(next) {
+      active = next
+    },
+    async retire() {
+      const current = active
+      active = undefined
+      await current?.dispose?.()
+    },
+  }
+}
+
+/** The handle the host returns from `agent.transform` / `model.transform`. */
+export interface TransformRegistration {
+  dispose: () => Promise<void>
+}
+
+/**
+ * Append a transform after an earlier registration, then retire the earlier one
+ * so the surviving callback sorts last. The earlier registration is disposed in
+ * a `finally`, so a failed re-registration does not leave the mis-ordered
+ * transform live. Returns the fresh handle.
+ */
+export async function reassertTransform(
+  reregister: () => Promise<TransformRegistration>,
+  early: TransformRegistration,
+): Promise<TransformRegistration> {
+  try {
+    return await reregister()
+  } finally {
+    // The host (and its mocks) may hand back a handle without `dispose`; never
+    // let that turn into an uncaught rejection inside the deferred task.
+    await early?.dispose?.()
+  }
+}
+
+/**
+ * Run `task` after the current macrotask. `setTimeout` keeps the work off the
+ * boot batch and survives either a browser or Node runtime.
+ */
+function scheduleReassert(task: () => Promise<void>): void {
+  setTimeout(() => {
+    void task().catch((error) => log.warn("deferred agent routing failed", error))
+  }, 0)
 }
 
 /** Inject the resolved `~…-latest` pool into every `openrouter/auto` request. */
