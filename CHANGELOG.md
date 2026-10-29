@@ -53,6 +53,25 @@ Auto Router", which the old name no longer described.
 - CI now runs install, typecheck, build, test, and smoke.
 
 ### Fixed
+- **CI test step failed on Node 20.** `npm test` passed a glob to
+  `node --test`, and Node 20 ships no glob expansion for that flag (it arrived in
+  Node 21). The runner therefore found no test files and exited 1 on every push
+  since 2026-10-02, while the same command passed locally on Node 26. The script
+  now passes the directory, which both versions expand. Verified on Node 20.20.2
+  and Node 26.12.0: 43 tests, 0 failures, both.
+- **Primary agents keep the router alias instead of taking a role route.**
+  `build` and `plan` match the heavy `build|code|…` pattern, so routing
+  repointed them to `syn:large:text` and the configured default never governed
+  the session the operator drives. A primary-capable agent now resolves to
+  `defaultAgentModel` (default `syn:auto`) regardless of the role patterns, so
+  the global default and the host's last-used model pick stay in charge.
+  "Primary-capable" is by mode, not by id: `primary` and `all` agents both
+  count, because the host lets the operator select either as their primary. The
+  built-in utility primaries (`compaction`, `summary`) keep their cheap
+  `syn:small:text` route, since they run auxiliary work rather than driving a
+  session. Subagents are unaffected and still route by role. See
+  `UTILITY_PRIMARY_IDS` in `src/constants.ts` and `resolveAgentModel` in
+  `src/routing.ts`.
 - **Provider settings no longer 400 after upgrading from a pre-2.0 cache.** The
   on-disk Synthetic catalog is now versioned and re-validated on load, and
   `capabilities.tools` is coerced to a strict boolean. A cache written by an

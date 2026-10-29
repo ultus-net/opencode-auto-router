@@ -46,6 +46,17 @@ export const DEFAULT_AGENT_ROUTES: readonly { match: string; model: string }[] =
   { match: "build|code|coder|edit|implement|plan|review|debug|refactor|general|test|decompose|architect|judge", model: "syn:large:text" },
 ]
 
+/**
+ * Built-in primary agents that run auxiliary work rather than driving the
+ * session, so they keep their cheap role route.
+ *
+ * Every other primary-capable agent keeps `defaultAgentModel` instead: the
+ * operator's own model pick should govern the session they drive, and a role
+ * route would silently outrank it. The rule lives in `resolveAgentModel`
+ * (`routing.ts`); this list is only the exception set.
+ */
+export const UTILITY_PRIMARY_IDS: readonly string[] = ["compaction", "summary"]
+
 export const OPENROUTER_PROVIDER_ID = "openrouter"
 export const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
 

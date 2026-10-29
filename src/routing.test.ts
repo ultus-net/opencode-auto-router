@@ -7,7 +7,7 @@ import { SYNTHETIC_AUTO_MODEL_ID } from "./constants.js"
 
 const cfg = resolveConfig()
 
-type ProbeAgent = { id: string; model?: { providerID?: string; id?: string } }
+type ProbeAgent = { id: string; model?: { providerID?: string; id?: string }; mode?: string }
 type ProbeDraft = {
   list: () => ProbeAgent[]
   get: (id: string) => ProbeAgent | undefined
@@ -107,7 +107,6 @@ test("routeAgents repoints unpinned custom agents and leaves foreign pins", () =
 test("routes known roles by pattern and defaults the rest to syn:auto", () => {
   // Heavy roles -> large text.
   assert.equal(resolveAgentModel({ id: "reviewer" }, cfg)?.id, "syn:large:text")
-  assert.equal(resolveAgentModel({ id: "build" }, cfg)?.id, "syn:large:text")
   // Light/research roles -> small text.
   assert.equal(resolveAgentModel({ id: "explore" }, cfg)?.id, "syn:small:text")
   // Vision roles -> large vision.
@@ -120,6 +119,75 @@ test("routes known roles by pattern and defaults the rest to syn:auto", () => {
   assert.equal(resolveAgentModel({ id: "totally-unknown" }, cfg)?.id, SYNTHETIC_AUTO_MODEL_ID)
   // Every routed target lives on the Synthetic provider.
   assert.equal(resolveAgentModel({ id: "build" }, cfg)?.providerID, "synthetic")
+})
+
+test("a primary-capable agent keeps the router alias, not its role route", () => {
+  // `build` and `plan` match the heavy pattern, but they drive the operator's
+  // session: the global default (and the host's last-used pick behind it) wins.
+  for (const id of ["build", "plan"]) {
+    const routed = resolveAgentModel({ id, mode: "primary" }, cfg)
+    assert.equal(routed?.id, SYNTHETIC_AUTO_MODEL_ID, `${id} must keep syn:auto`)
+    assert.equal(routed?.providerID, "synthetic")
+  }
+
+  // The host also lets the operator select an `all` agent as their primary, so
+  // both primary modes are primary-capable.
+  for (const mode of ["primary", "all"] as const) {
+    assert.equal(
+      resolveAgentModel({ id: "build", mode }, cfg)?.id,
+      SYNTHETIC_AUTO_MODEL_ID,
+      `mode ${mode} must keep syn:auto`,
+    )
+  }
+
+  // The same ids in a subagent position still take their role route, so the
+  // guard is the mode and not the id.
+  assert.equal(resolveAgentModel({ id: "build", mode: "subagent" }, cfg)?.id, "syn:large:text")
+  // An absent mode is unknown, not primary: a probe that omits it keeps the role
+  // route. The host always supplies a mode (a mode-less agent resolves to
+  // `primary`), so this only affects hand-built probes.
+  assert.equal(resolveAgentModel({ id: "build" }, cfg)?.id, "syn:large:text")
+})
+
+test("utility primaries keep their cheap route", () => {
+  for (const id of ["compaction", "summary"]) {
+    assert.equal(
+      resolveAgentModel({ id, mode: "primary" }, cfg)?.id,
+      "syn:small:text",
+      `${id} must stay on the small alias`,
+    )
+  }
+})
+
+test("a primary agent is left untouched when no default model is configured", () => {
+  const c = resolveConfig({ routing: { defaultAgentModel: "" } })
+  assert.equal(resolveAgentModel({ id: "build", mode: "primary" }, c), undefined)
+  // The utility primaries still route by pattern under the same config.
+  assert.equal(resolveAgentModel({ id: "compaction", mode: "primary" }, c)?.id, "syn:small:text")
+})
+
+test("a foreign-pinned primary agent is never routed", () => {
+  assert.equal(
+    resolveAgentModel(
+      { id: "build", mode: "primary", model: { providerID: "anthropic" } },
+      cfg,
+    ),
+    undefined,
+  )
+})
+
+test("routeAgents sends the primary agent to syn:auto and subagents by role", () => {
+  const draft = new Map<string, ProbeAgent>([
+    ["build", { id: "build", mode: "primary" }],
+    ["plan", { id: "plan", mode: "primary" }],
+    ["compaction", { id: "compaction", mode: "primary" }],
+    ["reviewer", { id: "reviewer", mode: "subagent" }],
+  ])
+  routeAgents(makeDraft(draft) as never, cfg)
+  assert.equal(draft.get("build")?.model?.id, SYNTHETIC_AUTO_MODEL_ID)
+  assert.equal(draft.get("plan")?.model?.id, SYNTHETIC_AUTO_MODEL_ID)
+  assert.equal(draft.get("compaction")?.model?.id, "syn:small:text")
+  assert.equal(draft.get("reviewer")?.model?.id, "syn:large:text")
 })
 
 test("the first matching route wins", () => {

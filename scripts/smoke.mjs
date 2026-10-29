@@ -68,13 +68,16 @@ function makeHost() {
   // Agents routed by the plugin. `pinned` is explicitly on another provider
   // and must survive untouched.
   const agents = new Map([
-    ["title", { id: "title", model: undefined }],
-    ["build", { id: "build", model: undefined }],
-    ["explore", { id: "explore", model: undefined }],
-    ["image-analyzer", { id: "image-analyzer", model: undefined }],
-    ["unmatched-agent", { id: "unmatched-agent", model: undefined }],
-    ["empty-model-agent", { id: "empty-model-agent", model: {} }],
-    ["pinned", { id: "pinned", model: { providerID: "anthropic", id: "claude" } }],
+    ["title", { id: "title", mode: "primary", model: undefined }],
+    ["build", { id: "build", mode: "primary", model: undefined }],
+    ["plan", { id: "plan", mode: "primary", model: undefined }],
+    ["all-mode-agent", { id: "all-mode-agent", mode: "all", model: undefined }],
+    ["compaction", { id: "compaction", mode: "primary", model: undefined }],
+    ["explore", { id: "explore", mode: "subagent", model: undefined }],
+    ["image-analyzer", { id: "image-analyzer", mode: "subagent", model: undefined }],
+    ["unmatched-agent", { id: "unmatched-agent", mode: "subagent", model: undefined }],
+    ["empty-model-agent", { id: "empty-model-agent", mode: "subagent", model: {} }],
+    ["pinned", { id: "pinned", mode: "subagent", model: { providerID: "anthropic", id: "claude" } }],
   ])
 
   const eventQueue = []
@@ -213,7 +216,15 @@ assert.deepEqual(ctx.__default, { providerID: "synthetic", modelID: "syn:auto" }
 assert.deepEqual(ctx.__titleModel, { providerID: "synthetic", id: "syn:small:text" })
 
 // Agent-level routing (the supported coarse-routing lever).
-assert.deepEqual(ctx.__agents.get("build").model, { providerID: "synthetic", id: "syn:large:text" })
+// Primary agents keep the router alias so the global default and the host's
+// last-used pick govern the session the operator drives.
+assert.deepEqual(ctx.__agents.get("build").model, { providerID: "synthetic", id: "syn:auto" })
+assert.deepEqual(ctx.__agents.get("plan").model, { providerID: "synthetic", id: "syn:auto" })
+// `all` agents are primary-capable too: the operator can select one as their primary.
+assert.deepEqual(ctx.__agents.get("all-mode-agent").model, { providerID: "synthetic", id: "syn:auto" })
+// Utility primaries run auxiliary work and keep their cheap route.
+assert.deepEqual(ctx.__agents.get("compaction").model, { providerID: "synthetic", id: "syn:small:text" })
+// Subagents route by role.
 assert.deepEqual(ctx.__agents.get("explore").model, { providerID: "synthetic", id: "syn:small:text" })
 assert.deepEqual(ctx.__agents.get("image-analyzer").model, { providerID: "synthetic", id: "syn:large:vision" })
 // Unmatched agents fall to the router alias (which remaps to primary upstream).

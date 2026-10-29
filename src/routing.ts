@@ -15,12 +15,19 @@
  * configured primary alias). This spreads work across the aliases by role while
  * the request-level failover in `failover.ts` stays untouched.
  *
+ * Primary agents are the operator's driver, not a routed role. `build` and
+ * `plan` therefore keep the router alias, so the global default and the
+ * "last used model" pick still govern the session the operator drives. Matching
+ * them against a role pattern would pin them to a concrete alias and silently
+ * outrank that pick. The built-in utility primaries (`compaction`, `summary`)
+ * are the exception: they run auxiliary work, so they keep their cheap route.
+ *
  * Only router-managed agents are repointed: those with no model at all, or
  * those already on Synthetic. An agent explicitly pinned to another provider is
  * left alone, so the plugin never clobbers a deliberate choice.
  */
 
-import { SYNTHETIC_PROVIDER_ID } from "./constants.js"
+import { SYNTHETIC_PROVIDER_ID, UTILITY_PRIMARY_IDS } from "./constants.js"
 import type { ResolvedConfig } from "./types.js"
 
 /** The model a route assigns, in OpenCode's `{ providerID, id }` shape. */
@@ -32,7 +39,9 @@ export interface AgentModelTarget {
 /** The subset of an agent this module reads. */
 export interface RoutableAgent {
   id: string
-  model?: { providerID?: string } | undefined
+  model?: { providerID?: string; id?: string } | undefined
+  /** Host agent mode; absent in unit probes, treated as non-primary. */
+  mode?: "subagent" | "primary" | "all" | undefined
 }
 
 /**
@@ -42,6 +51,21 @@ export interface RoutableAgent {
  * match wins. Unmatched agents receive `config.defaultAgentModel` when set.
  * The title agent is excluded here: `setDefaults` owns the small/title model,
  * and two writers for one field is how drift starts.
+ *
+ * A primary-capable agent outside `UTILITY_PRIMARY_IDS` resolves to
+ * `config.defaultAgentModel` regardless of the role patterns, so the operator's
+ * global default (and the host's last-used pick behind it) governs the session
+ * they drive. "Primary-capable" is `mode` `primary` or `all`, because the host
+ * lets the operator select an `all` agent as their primary. It still returns
+ * `undefined` when no default is configured, which leaves the agent's own model
+ * untouched.
+ *
+ * An agent pinned to a non-Synthetic provider is left untouched. An agent on
+ * Synthetic is plugin-owned, so a deliberate `syn:*` pin on an agent gets
+ * re-routed. That is intentional: folding the plugin's own output back into the
+ * operator-pin set would make a later `routing` config change stop taking effect
+ * on any agent already routed once, because the plugin cannot tell its own write
+ * from an operator's. Pin a different provider to pin deliberately.
  */
 export function resolveAgentModel(
   agent: RoutableAgent,
@@ -49,13 +73,22 @@ export function resolveAgentModel(
 ): AgentModelTarget | undefined {
   if (agent.id === "title") return undefined
 
-  const currentProvider = agent.model?.providerID
-  const managed = currentProvider == null || currentProvider === SYNTHETIC_PROVIDER_ID
-  if (!managed) return undefined
+  // A non-Synthetic pin is a deliberate choice on another provider; never touch
+  // it. An agent already on Synthetic stays plugin-owned, so a config change
+  // still takes effect there (see the docstring).
+  if (agent.model?.providerID != null && agent.model.providerID !== SYNTHETIC_PROVIDER_ID) {
+    return undefined
+  }
 
-  for (const route of config.agentRoutes) {
-    if (route.model && matches(agent.id, route.match)) {
-      return { providerID: SYNTHETIC_PROVIDER_ID, id: route.model }
+  const primaryCapable = agent.mode === "primary" || agent.mode === "all"
+  const utilityPrimary = UTILITY_PRIMARY_IDS.includes(agent.id)
+  const skipRoutes = primaryCapable && !utilityPrimary
+
+  if (!skipRoutes) {
+    for (const route of config.agentRoutes) {
+      if (route.model && matches(agent.id, route.match)) {
+        return { providerID: SYNTHETIC_PROVIDER_ID, id: route.model }
+      }
     }
   }
 
@@ -74,7 +107,8 @@ export function resolveAgentModel(
 export interface RoutingEditor {
   list(): readonly {
     id: string | { toString(): string }
-    model?: { providerID?: unknown } | undefined
+    model?: { providerID?: unknown; id?: unknown } | undefined
+    mode?: unknown
   }[]
   update(id: string, update: (agent: { model?: unknown }) => void): void
 }
@@ -102,6 +136,13 @@ export function routeAgents(editor: RoutingEditor, config: ResolvedConfig): stri
         // A model without a providerID counts as unset; only stringify a real
         // id, so the caller never fabricates "undefined"/"null".
         model: provider == null ? undefined : { providerID: String(provider) },
+        // Only a recognized mode is forwarded; anything else is treated as
+        // unknown, so routing falls back to the role patterns rather than
+        // guessing at the agent's class.
+        mode:
+          agent.mode === "primary" || agent.mode === "all" || agent.mode === "subagent"
+            ? agent.mode
+            : undefined,
       },
       config,
     )
