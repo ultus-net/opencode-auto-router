@@ -53,6 +53,12 @@ Auto Router", which the old name no longer described.
 - CI now runs install, typecheck, build, test, and smoke.
 
 ### Fixed
+- **CI test step failed on Node 20.** `npm test` passed a glob to
+  `node --test`, and Node 20 ships no glob expansion for that flag (it arrived in
+  Node 21). The runner therefore found no test files and exited 1 on every push
+  since 2026-10-02, while the same command passed locally on Node 26. The script
+  now passes the directory, which both versions expand. Verified on Node 20.20.2
+  and Node 26.12.0: 43 tests, 0 failures, both.
 - **Primary agents keep the router alias instead of taking a role route.**
   `build` and `plan` match the heavy `build|code|…` pattern, so routing
   repointed them to `syn:large:text` and the configured default never governed
