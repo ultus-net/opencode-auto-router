@@ -71,6 +71,7 @@ function makeHost() {
     ["title", { id: "title", mode: "primary", model: undefined }],
     ["build", { id: "build", mode: "primary", model: undefined }],
     ["plan", { id: "plan", mode: "primary", model: undefined }],
+    ["all-mode-agent", { id: "all-mode-agent", mode: "all", model: undefined }],
     ["compaction", { id: "compaction", mode: "primary", model: undefined }],
     ["explore", { id: "explore", mode: "subagent", model: undefined }],
     ["image-analyzer", { id: "image-analyzer", mode: "subagent", model: undefined }],
@@ -219,6 +220,8 @@ assert.deepEqual(ctx.__titleModel, { providerID: "synthetic", id: "syn:small:tex
 // last-used pick govern the session the operator drives.
 assert.deepEqual(ctx.__agents.get("build").model, { providerID: "synthetic", id: "syn:auto" })
 assert.deepEqual(ctx.__agents.get("plan").model, { providerID: "synthetic", id: "syn:auto" })
+// `all` agents are primary-capable too: the operator can select one as their primary.
+assert.deepEqual(ctx.__agents.get("all-mode-agent").model, { providerID: "synthetic", id: "syn:auto" })
 // Utility primaries run auxiliary work and keep their cheap route.
 assert.deepEqual(ctx.__agents.get("compaction").model, { providerID: "synthetic", id: "syn:small:text" })
 // Subagents route by role.

@@ -51,10 +51,13 @@ The plugin therefore routes **by role**:
   `syn:large:text`; research/light roles, including the cheap `executor` →
   `syn:small:text`; other heavy coding roles → `syn:large:text`; anything
   unmatched → `syn:auto`.
-- **Primary agents are not roles.** `build` and `plan` keep `syn:auto` however
-  their id matches, so the global default and the host's last-used model pick
-  still govern the session you drive. The built-in utility primaries
-  (`compaction`, `summary`) are the exception and keep their cheap route.
+- **Primary agents are not roles.** `build` and `plan` keep the router alias
+  (`defaultAgentModel`, default `syn:auto`) however their id matches, so the
+  global default and the host's last-used model pick still govern the session
+  you drive. The rule is by mode, not by id: `primary` and `all` agents both
+  count, because the host lets you select either as your primary. The built-in
+  utility primaries (`compaction`, `summary`) are the exception and keep their
+  cheap route.
 
 An agent that is explicitly pinned to another provider is **never** touched, and
 the title agent stays under `smallModel` ownership. This is coarse routing by

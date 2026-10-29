@@ -36,9 +36,10 @@ export interface RoutingConfig {
    */
   agentRoutes?: AgentRoute[]
   /**
-   * Alias for agents that match no route. Default `syn:auto` (the router alias,
-   * which itself remaps to `primaryModel`). Set to `""` to leave unmatched
-   * agents untouched.
+   * Alias for agents that match no route, and for primary-capable agents, which
+   * skip role routing so the operator's own model pick governs the session they
+   * drive. Default `syn:auto` (which remaps to `primaryModel`). Set to `""` to
+   * leave unmatched and primary agents untouched.
    */
   defaultAgentModel?: string
 }

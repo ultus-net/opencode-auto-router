@@ -121,7 +121,7 @@ test("routes known roles by pattern and defaults the rest to syn:auto", () => {
   assert.equal(resolveAgentModel({ id: "build" }, cfg)?.providerID, "synthetic")
 })
 
-test("a primary agent keeps the router alias, not its role route", () => {
+test("a primary-capable agent keeps the router alias, not its role route", () => {
   // `build` and `plan` match the heavy pattern, but they drive the operator's
   // session: the global default (and the host's last-used pick behind it) wins.
   for (const id of ["build", "plan"]) {
@@ -130,9 +130,23 @@ test("a primary agent keeps the router alias, not its role route", () => {
     assert.equal(routed?.providerID, "synthetic")
   }
 
+  // The host also lets the operator select an `all` agent as their primary, so
+  // both primary modes are primary-capable.
+  for (const mode of ["primary", "all"] as const) {
+    assert.equal(
+      resolveAgentModel({ id: "build", mode }, cfg)?.id,
+      SYNTHETIC_AUTO_MODEL_ID,
+      `mode ${mode} must keep syn:auto`,
+    )
+  }
+
   // The same ids in a subagent position still take their role route, so the
   // guard is the mode and not the id.
   assert.equal(resolveAgentModel({ id: "build", mode: "subagent" }, cfg)?.id, "syn:large:text")
+  // An absent mode is unknown, not primary: a probe that omits it keeps the role
+  // route. The host always supplies a mode (a mode-less agent resolves to
+  // `primary`), so this only affects hand-built probes.
+  assert.equal(resolveAgentModel({ id: "build" }, cfg)?.id, "syn:large:text")
 })
 
 test("utility primaries keep their cheap route", () => {

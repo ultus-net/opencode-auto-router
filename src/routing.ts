@@ -39,9 +39,9 @@ export interface AgentModelTarget {
 /** The subset of an agent this module reads. */
 export interface RoutableAgent {
   id: string
-  model?: { providerID?: string } | undefined
+  model?: { providerID?: string; id?: string } | undefined
   /** Host agent mode; absent in unit probes, treated as non-primary. */
-  mode?: string | undefined
+  mode?: "subagent" | "primary" | "all" | undefined
 }
 
 /**
@@ -52,11 +52,17 @@ export interface RoutableAgent {
  * The title agent is excluded here: `setDefaults` owns the small/title model,
  * and two writers for one field is how drift starts.
  *
- * A primary agent outside `UTILITY_PRIMARY_IDS` resolves to
+ * A primary-capable agent outside `UTILITY_PRIMARY_IDS` resolves to
  * `config.defaultAgentModel` regardless of the role patterns, so the operator's
  * global default (and the host's last-used pick behind it) governs the session
- * they drive. It still returns `undefined` when no default is configured, which
- * leaves the agent's own model untouched.
+ * they drive. "Primary-capable" is `mode` `primary` or `all`, because the host
+ * lets the operator select an `all` agent as their primary. It still returns
+ * `undefined` when no default is configured, which leaves the agent's own model
+ * untouched.
+ *
+ * An agent carrying an explicit non-Synthetic pin keeps it untouched. An agent
+ * already on Synthetic stays managed: the plugin owns Synthetic-level routing,
+ * and "was this pin ours?" is state a replayed transform cannot hold.
  */
 export function resolveAgentModel(
   agent: RoutableAgent,
@@ -64,20 +70,28 @@ export function resolveAgentModel(
 ): AgentModelTarget | undefined {
   if (agent.id === "title") return undefined
 
-  const currentProvider = agent.model?.providerID
-  const managed = currentProvider == null || currentProvider === SYNTHETIC_PROVIDER_ID
-  if (!managed) return undefined
-
-  const isUtilityPrimary = UTILITY_PRIMARY_IDS.includes(agent.id)
-  if (agent.mode === "primary" && !isUtilityPrimary) {
-    return config.defaultAgentModel
-      ? { providerID: SYNTHETIC_PROVIDER_ID, id: config.defaultAgentModel }
-      : undefined
+  if (agent.model?.providerID != null && agent.model.providerID !== SYNTHETIC_PROVIDER_ID) {
+    return undefined
   }
 
-  for (const route of config.agentRoutes) {
-    if (route.model && matches(agent.id, route.match)) {
-      return { providerID: SYNTHETIC_PROVIDER_ID, id: route.model }
+  // A non-Synthetic pin is a deliberate choice on another provider; never touch it.
+  // An agent already on Synthetic stays managed: the plugin owns Synthetic-level
+  // routing, and tracking "did we write this pin?" would need state that a
+  // replayed transform cannot hold. Routing is deterministic, so re-resolving an
+  // agent the plugin already routed is a no-op.
+  if (agent.model?.providerID != null && agent.model.providerID !== SYNTHETIC_PROVIDER_ID) {
+    return undefined
+  }
+
+  const primaryCapable = agent.mode === "primary" || agent.mode === "all"
+  const utilityPrimary = UTILITY_PRIMARY_IDS.includes(agent.id)
+  const skipRoutes = primaryCapable && !utilityPrimary
+
+  if (!skipRoutes) {
+    for (const route of config.agentRoutes) {
+      if (route.model && matches(agent.id, route.match)) {
+        return { providerID: SYNTHETIC_PROVIDER_ID, id: route.model }
+      }
     }
   }
 
@@ -96,7 +110,7 @@ export function resolveAgentModel(
 export interface RoutingEditor {
   list(): readonly {
     id: string | { toString(): string }
-    model?: { providerID?: unknown } | undefined
+    model?: { providerID?: unknown; id?: unknown } | undefined
     mode?: unknown
   }[]
   update(id: string, update: (agent: { model?: unknown }) => void): void
@@ -125,9 +139,13 @@ export function routeAgents(editor: RoutingEditor, config: ResolvedConfig): stri
         // A model without a providerID counts as unset; only stringify a real
         // id, so the caller never fabricates "undefined"/"null".
         model: provider == null ? undefined : { providerID: String(provider) },
-        // A non-string mode is treated as unknown so routing falls back to the
-        // role patterns rather than guessing at the agent's class.
-        mode: typeof agent.mode === "string" ? agent.mode : undefined,
+        // Only a recognized mode is forwarded; anything else is treated as
+        // unknown, so routing falls back to the role patterns rather than
+        // guessing at the agent's class.
+        mode:
+          agent.mode === "primary" || agent.mode === "all" || agent.mode === "subagent"
+            ? agent.mode
+            : undefined,
       },
       config,
     )

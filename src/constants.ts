@@ -48,11 +48,12 @@ export const DEFAULT_AGENT_ROUTES: readonly { match: string; model: string }[] =
 
 /**
  * Built-in primary agents that run auxiliary work rather than driving the
- * session. They keep their role route so compaction and titling stay cheap.
+ * session, so they keep their cheap role route.
  *
- * Every other primary agent (`build`, `plan`) keeps the router alias instead:
- * the operator's own model pick should govern the session they drive, and a
- * role route would silently outrank it.
+ * Every other primary-capable agent keeps `defaultAgentModel` instead: the
+ * operator's own model pick should govern the session they drive, and a role
+ * route would silently outrank it. The rule lives in `resolveAgentModel`
+ * (`routing.ts`); this list is only the exception set.
  */
 export const UTILITY_PRIMARY_IDS: readonly string[] = ["compaction", "summary"]
 
