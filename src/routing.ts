@@ -60,9 +60,12 @@ export interface RoutableAgent {
  * `undefined` when no default is configured, which leaves the agent's own model
  * untouched.
  *
- * An agent carrying an explicit non-Synthetic pin keeps it untouched. An agent
- * already on Synthetic stays managed: the plugin owns Synthetic-level routing,
- * and "was this pin ours?" is state a replayed transform cannot hold.
+ * An agent pinned to a non-Synthetic provider is left untouched. An agent on
+ * Synthetic is plugin-owned, so a deliberate `syn:*` pin on an agent gets
+ * re-routed. That is intentional: folding the plugin's own output back into the
+ * operator-pin set would make a later `routing` config change stop taking effect
+ * on any agent already routed once, because the plugin cannot tell its own write
+ * from an operator's. Pin a different provider to pin deliberately.
  */
 export function resolveAgentModel(
   agent: RoutableAgent,
@@ -70,15 +73,9 @@ export function resolveAgentModel(
 ): AgentModelTarget | undefined {
   if (agent.id === "title") return undefined
 
-  if (agent.model?.providerID != null && agent.model.providerID !== SYNTHETIC_PROVIDER_ID) {
-    return undefined
-  }
-
-  // A non-Synthetic pin is a deliberate choice on another provider; never touch it.
-  // An agent already on Synthetic stays managed: the plugin owns Synthetic-level
-  // routing, and tracking "did we write this pin?" would need state that a
-  // replayed transform cannot hold. Routing is deterministic, so re-resolving an
-  // agent the plugin already routed is a no-op.
+  // A non-Synthetic pin is a deliberate choice on another provider; never touch
+  // it. An agent already on Synthetic stays plugin-owned, so a config change
+  // still takes effect there (see the docstring).
   if (agent.model?.providerID != null && agent.model.providerID !== SYNTHETIC_PROVIDER_ID) {
     return undefined
   }
